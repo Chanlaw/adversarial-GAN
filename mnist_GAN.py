@@ -13,7 +13,7 @@ import tensorflow as tf
 #Define flags
 tf.app.flags.DEFINE_integer('batch_size', 100,
                             "Number of digits to process in a batch.")
-tf.app.flags.DEFINE_integer('num_epochs', 100,
+tf.app.flags.DEFINE_integer('num_epochs', 300,
                             "Number of times to process MNIST data.")
 tf.app.flags.DEFINE_integer('examples_per_class', 100,
                             "Number of examples to give per MNIST Class")
@@ -110,7 +110,7 @@ loss_d_lbl = tf.cond(tf.greater(num_lbl, 0),
 loss_d_fake = tf.reduce_mean(tf.nn.softplus(logits_fake))
 loss_d = loss_d_unl + loss_d_lbl + loss_d_fake
 
-real_activations, fake_activations, _ = tf.split(d5, [num_unl, num_unl, num_lbl], 0) 
+real_activations, fake_activations, _ = tf.split(d4, [num_unl, num_unl, num_lbl], 0) 
 loss_g = tf.reduce_mean(tf.square(tf.reduce_mean(real_activations,axis=0) 
                                 - tf.reduce_mean(fake_activations,axis=0))) 
 accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits_lbl,axis=1),labels), tf.float32))
@@ -122,7 +122,7 @@ with sess.as_default():
     g_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
     gvs = d_optimizer.compute_gradients(loss_d, 
                     var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="discriminator"))
-    clipped_gradients=[(tf.clip_by_value(grad, -0.5, 0.5), var) for grad, var in gvs]
+    clipped_gradients=[(tf.clip_by_value(grad, -2.0, 2.0), var) for grad, var in gvs]
     d_train_op = d_optimizer.apply_gradients(clipped_gradients)
     g_train_op = g_optimizer.minimize(loss_g,
                     var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="generator"))
