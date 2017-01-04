@@ -99,13 +99,12 @@ num_lbl = tf.placeholder(tf.int64, shape=[]) #num of labelled examples for super
 labels = tf.placeholder(tf.int64, shape=[None])
 
 logits_unl, logits_fake, logits_lbl = tf.split(d_output, [num_unl, num_unl, num_lbl],0)
-
 #TODO: Historical Averaging
 loss_d_unl = tf.reduce_mean(- tf.log(tf.reduce_sum(tf.exp(logits_unl), axis=1)) \
             + tf.log(tf.reduce_sum(tf.exp(logits_unl),axis=1)+1))
 loss_d_lbl = tf.cond(tf.greater(num_lbl, 0), 
                     lambda: tf.reduce_mean(
-                        tf.nn.softmax_cross_entropy_with_logits(logits_lbl, tf.one_hot(labels, 10))), 
+                        tf.nn.softmax_cross_entropy_with_logits(logits_lbl, tf.one_hot(labels,10))), 
                     lambda: tf.constant(0.))
 loss_d_fake = tf.reduce_mean(tf.log(tf.reduce_sum(tf.exp(logits_fake),axis=1)+1))
 loss_d = loss_d_unl + loss_d_lbl + loss_d_fake
@@ -113,7 +112,9 @@ loss_d = loss_d_unl + loss_d_lbl + loss_d_fake
 real_activations, fake_activations, _ = tf.split(d5, [num_unl, num_unl, num_lbl], 0) 
 loss_g = tf.reduce_mean(tf.square(tf.reduce_mean(real_activations,axis=0) 
                                 - tf.reduce_mean(fake_activations,axis=0))) 
+
 accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits_lbl,axis=1),labels), tf.float32))
+prob_lbl = 1 - tf.reduce_mean(1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1))
 
 #train the network
 sess = tf.Session()
@@ -143,7 +144,8 @@ with sess.as_default():
                             num_lbl: len(y_labelled[i*batch_size: (i+1)*batch_size]),
                             labels: y_labelled[i*batch_size: (i+1)*batch_size]}
                 labelled_loss, unlabelled_loss, fake_loss, train_acc, disc_loss, gen_loss, _ , _ = \
-                        sess.run([loss_d_lbl, loss_d_unl, loss_d_fake, accuracy, loss_d, loss_g, d_train_op, g_train_op], 
+                        sess.run([loss_d_lbl, loss_d_unl, loss_d_fake, accuracy, loss_d, loss_g,
+                                d_train_op, g_train_op], 
                                 feed_dict=feed_dict)
             else:
                 feed_dict = {noise: np.random.randn(batch_size, 100), 
@@ -152,14 +154,16 @@ with sess.as_default():
                             num_unl: batch_size,
                             num_lbl: 0,
                             labels: []}
-                unlabelled_loss, labelled_loss, fake_loss, disc_loss, gen_loss, _ , _ = sess.run([loss_d_unl, loss_d_lbl,
-                    loss_d_fake, loss_d, loss_g, d_train_op, g_train_op], 
-                                                    feed_dict=feed_dict)
+                unlabelled_loss, labelled_loss, fake_loss, disc_loss, gen_loss, _ , _ = \
+                        sess.run([loss_d_unl, loss_d_lbl,
+                                loss_d_fake, loss_d, loss_g, d_train_op, g_train_op], 
+                                feed_dict=feed_dict)
             if ((i)%200 == 0):
                 print("Step %d, Discriminator Loss %.4f, Generator Loss %.4f" \
                         %((i + epoch*60000/batch_size), disc_loss, gen_loss))
                 print("Discriminator Loss breakdown - Labelled %.4f, Fake %.4f, Unlabelled %.4f" \
                     %( labelled_loss, fake_loss, unlabelled_loss))
+        test_prob=[]
         test_losses=[]
         test_accuracies=[]
         #TODO: Implement Checkpoints
@@ -170,8 +174,11 @@ with sess.as_default():
                         num_unl: 0,
                         num_lbl: batch_size,
                         labels: y_test[i*batch_size: (i+1)*batch_size]}
-            disc_acc, disc_loss = sess.run([accuracy, loss_d_lbl], feed_dict=feed_dict)
+            disc_prob, disc_acc, disc_loss = \
+                        sess.run([prob_lbl, accuracy, loss_d_lbl], feed_dict=feed_dict)
+            test_prob.append(disc_prob)
             test_losses.append(disc_loss)
             test_accuracies.append(disc_acc)
-        print("Test Loss: %.4f Test Accuracy: %.4f" \
-                %(sum(test_losses)/len(test_losses), sum(test_accuracies)/len(test_accuracies)))
+        print("Test Loss: %.4f Test Accuracy: %.4f Avg Prob Real: %.4f" \
+                %(sum(test_losses)/len(test_losses), sum(test_accuracies)/len(test_accuracies), \
+                    sum(test_prob)/len(test_prob)))
