@@ -32,21 +32,22 @@ def gaussian_noise(x, sigma):
     return x + noise 
 
 #Generator network with 3 hidden layers with batch normalization
-#TODO: Implement virtual batch norm
+#TODO: Implement virtual batch norm 
+#Currently uses exponential moving averages instead of fixed values
 with tf.variable_scope("generator"):
     noise = tf.placeholder(tf.float32, [None, 100], name="noise")
     with tf.variable_scope("hidden1") as scope:
         out1 = tf.contrib.layers.batch_norm(
             tf.contrib.layers.fully_connected(noise, 500, tf.nn.softplus, scope=scope),
-            scope=scope)
+            updates_collections=None, scope=scope)
     with tf.variable_scope("hidden2") as scope:
         out2 = tf.contrib.layers.batch_norm(
             tf.contrib.layers.fully_connected(out1, 500, tf.nn.softplus, scope=scope),
-            scope=scope)
+            updates_collections=None, scope=scope)
     with tf.variable_scope("output") as scope:
         gen_images = tf.contrib.layers.batch_norm(
             tf.contrib.layers.fully_connected(out2, MNIST_SIZE, tf.nn.sigmoid, scope=scope),
-            scope=scope)
+            updates_collections=None, scope=scope)
 #Discriminator network with 5 hidden layers and gaussian noise
 real_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="real_images")
 labelled_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="labelled_images")
@@ -56,7 +57,7 @@ with tf.variable_scope("discriminator"):
                 gaussian_noise(tf.concat(0, [real_images, gen_images, labelled_images]), sigma=0.3),
                 1000, scope=scope)
     with tf.variable_scope("hidden2") as scope:
-        d2 = tf.contrib.layers.fully_connected(gaussian_noise(d1, sigma=0.5), 500, scope=scope)
+        d2 = tf.contrib.layers.fully_connected(gaussian_noise(d1, sigma=0.3), 500, scope=scope)
     with tf.variable_scope("hidden3") as scope:
         d3 = tf.contrib.layers.fully_connected(gaussian_noise(d2, sigma=0.5), 250, scope=scope)
     with tf.variable_scope("hidden4") as scope:
@@ -65,7 +66,8 @@ with tf.variable_scope("discriminator"):
         d5 = tf.contrib.layers.fully_connected(gaussian_noise(d4, sigma=0.5), 250, scope=scope)
     with tf.variable_scope("output") as scope:
         # We only need 10 since we're fixing the logits of the "fake" category to be 0
-        d_output = tf.contrib.layers.fully_connected(d5, 10, None, scope=scope)
+        d_output = tf.contrib.layers.fully_connected(gaussian_noise(d5, sigma=0.5),
+                                         10, None, scope=scope)
 
 #Load MNIST Data
 data = np.load('mnist.npz')
@@ -106,7 +108,7 @@ loss_d_lbl = tf.cond(tf.greater(num_lbl, 0),
                     lambda: tf.reduce_mean(
                         tf.nn.softmax_cross_entropy_with_logits(logits_lbl, tf.one_hot(labels, 10))), 
                     lambda: tf.constant(0.))
-loss_d_fake = tf.reduce_mean(tf.log(tf.reduce_sum(tf.exp(logits_unl),axis=1)+1))
+loss_d_fake = tf.reduce_mean(tf.log(tf.reduce_sum(tf.exp(logits_fake),axis=1)+1))
 loss_d = loss_d_unl + loss_d_lbl + loss_d_fake
 
 real_activations, fake_activations, _ = tf.split(d5, [num_unl, num_unl, num_lbl], 0) 
@@ -129,7 +131,7 @@ with sess.as_default():
     sess.run(init)
     for epoch in xrange(FLAGS.num_epochs):
         print("-------")
-        print("Epoch %d:" %(epoch))
+        print("Epoch %d:" %(epoch + 1))
         print("-------")
         for i in xrange(int(x_train.shape[0]/batch_size)):
             if y_labelled[i*batch_size: (i+1)*batch_size].size > 0:
@@ -152,7 +154,6 @@ with sess.as_default():
                 unlabelled_loss, labelled_loss, fake_loss, disc_loss, gen_loss, _ , _ = sess.run([loss_d_unl, loss_d_lbl,
                     loss_d_fake, loss_d, loss_g, d_train_op, g_train_op], 
                                                     feed_dict=feed_dict)
-
             if ((i)%200 == 0):
                 print("Step %d, Discriminator Loss %.4f, Generator Loss %.4f" \
                         %((i + epoch*60000/batch_size), disc_loss, gen_loss))
