@@ -33,21 +33,20 @@ def gaussian_noise(x, sigma):
 
 #Generator network with 3 hidden layers with batch normalization
 #TODO: Implement virtual batch norm 
-#Currently uses exponential moving averages instead of fixed values
 with tf.variable_scope("generator"):
     noise = tf.placeholder(tf.float32, [None, 100], name="noise")
     with tf.variable_scope("hidden1") as scope:
         out1 = tf.contrib.layers.batch_norm(
             tf.contrib.layers.fully_connected(noise, 500, tf.nn.softplus, scope=scope),
-            updates_collections=None, scope=scope)
+            scope=scope)
     with tf.variable_scope("hidden2") as scope:
         out2 = tf.contrib.layers.batch_norm(
             tf.contrib.layers.fully_connected(out1, 500, tf.nn.softplus, scope=scope),
-            updates_collections=None, scope=scope)
+            scope=scope)
     with tf.variable_scope("output") as scope:
         gen_images = tf.contrib.layers.batch_norm(
             tf.contrib.layers.fully_connected(out2, MNIST_SIZE, tf.nn.sigmoid, scope=scope),
-            updates_collections=None, scope=scope)
+            scope=scope)
 #Discriminator network with 5 hidden layers and gaussian noise
 real_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="real_images")
 labelled_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="labelled_images")
@@ -57,7 +56,7 @@ with tf.variable_scope("discriminator"):
                 gaussian_noise(tf.concat(0, [real_images, gen_images, labelled_images]), sigma=0.3),
                 1000, scope=scope)
     with tf.variable_scope("hidden2") as scope:
-        d2 = tf.contrib.layers.fully_connected(gaussian_noise(d1, sigma=0.3), 500, scope=scope)
+        d2 = tf.contrib.layers.fully_connected(gaussian_noise(d1, sigma=0.5), 500, scope=scope)
     with tf.variable_scope("hidden3") as scope:
         d3 = tf.contrib.layers.fully_connected(gaussian_noise(d2, sigma=0.5), 250, scope=scope)
     with tf.variable_scope("hidden4") as scope:
@@ -130,6 +129,8 @@ with sess.as_default():
     init = tf.global_variables_initializer()
     sess.run(init)
     for epoch in xrange(FLAGS.num_epochs):
+        idx = np.random.permutation(x_unl.shape[0]) 
+        x_unl = x_unl[idx]
         print("-------")
         print("Epoch %d:" %(epoch + 1))
         print("-------")
