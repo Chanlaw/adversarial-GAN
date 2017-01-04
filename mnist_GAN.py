@@ -17,7 +17,7 @@ tf.app.flags.DEFINE_integer('num_epochs', 300,
                             "Number of times to process MNIST data.")
 tf.app.flags.DEFINE_integer('examples_per_class', 100,
                             "Number of examples to give per MNIST Class")
-tf.app.flags.DEFINE_integer('learning_rate', 0.0003,
+tf.app.flags.DEFINE_integer('learning_rate', 0.0005,
                             "Learning rate for use in training")
 FLAGS = tf.app.flags.FLAGS
 
@@ -28,11 +28,6 @@ batch_size=FLAGS.batch_size
 def gaussian_noise(x, sigma):
     noise = tf.random_normal(tf.shape(x), 0, sigma)
     return x + noise 
-
-def log_sum_exp(x): #to prevent overflow
-  # max_x = tf.reduce_max(x, 1, keep_dims=True)
-  # x -= max_x
-  return tf.log(tf.reduce_sum(tf.exp(x), 1)) - tf.log(tf.reduce_sum(tf.exp(x))+1)
 
 #Generator network with 3 hidden layers with batch normalization
 #TODO: Implement virtual batch norm
@@ -102,6 +97,7 @@ labels = tf.placeholder(tf.int64, shape=[None])
 
 logits_unl, logits_fake, logits_lbl = tf.split(d_output, [num_unl, num_unl, num_lbl],0)
 
+#TODO: Historical Averaging
 loss_d_unl = tf.reduce_mean((- tf.log(tf.reduce_sum(tf.exp(logits_unl), 1)) + tf.log(tf.reduce_sum(tf.exp(logits_unl))+1)))
 loss_d_lbl = tf.cond(tf.greater(num_lbl, 0), 
                     lambda: tf.reduce_mean(
@@ -122,7 +118,7 @@ with sess.as_default():
     g_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
     gvs = d_optimizer.compute_gradients(loss_d, 
                     var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="discriminator"))
-    clipped_gradients=[(tf.clip_by_value(grad, -2.0, 2.0), var) for grad, var in gvs]
+    clipped_gradients=[(tf.clip_by_norm(grad, 10.0), var) for grad, var in gvs] #clip to prevent blowup from relu units
     d_train_op = d_optimizer.apply_gradients(clipped_gradients)
     g_train_op = g_optimizer.minimize(loss_g,
                     var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="generator"))
@@ -130,7 +126,7 @@ with sess.as_default():
     sess.run(init)
     for epoch in xrange(FLAGS.num_epochs):
         print("-------")
-        print("Epoch %d:" %(epoch+1))
+        print("Epoch %d:" %(epoch))
         print("-------")
         for i in xrange(int(x_train.shape[0]/batch_size)):
             if y_labelled[i*batch_size: (i+1)*batch_size].size > 0:
@@ -140,8 +136,8 @@ with sess.as_default():
                             num_unl: batch_size,
                             num_lbl: len(y_labelled[i*batch_size: (i+1)*batch_size]),
                             labels: y_labelled[i*batch_size: (i+1)*batch_size]}
-                fake_loss, fake_images, train_acc, disc_loss, gen_loss, _ , _ = \
-                        sess.run([loss_d_fake, out1, accuracy, loss_d, loss_g, d_train_op, g_train_op], 
+                labelled_loss, unlabelled_loss, fake_loss, train_acc, disc_loss, gen_loss, _ , _ = \
+                        sess.run([loss_d_lbl, loss_d_unl, loss_d_fake, accuracy, loss_d, loss_g, d_train_op, g_train_op], 
                                 feed_dict=feed_dict)
             else:
                 feed_dict = {noise: np.random.randn(batch_size, 100), 
@@ -150,16 +146,18 @@ with sess.as_default():
                             num_unl: batch_size,
                             num_lbl: 0,
                             labels: []}
-                unlabelled_logits, unlabelled_loss, labelled_loss, fake_loss, fake_images, disc_loss, gen_loss, _ , _ = sess.run([logits_unl, loss_d_unl, loss_d_lbl,
-                    loss_d_fake, out1, loss_d, loss_g, d_train_op, g_train_op], 
+                unlabelled_loss, labelled_loss, fake_loss, disc_loss, gen_loss, _ , _ = sess.run([loss_d_unl, loss_d_lbl,
+                    loss_d_fake, loss_d, loss_g, d_train_op, g_train_op], 
                                                     feed_dict=feed_dict)
 
-            if ((i+1)%200 == 0):
-                print("Step %d, Discriminator Loss %.4f, Fake Loss %.4f, Generator Loss %.4f" \
-                        %((i+1 + epoch*60000/batch_size), disc_loss,fake_loss, gen_loss))
-                print("Loss breakdown - Labelled Loss %.4f, Fake Loss %.4f, Unlabelled Loss %.4f" %( labelled_loss, fake_loss, unlabelled_loss))
+            if ((i)%200 == 0):
+                print("Step %d, Discriminator Loss %.4f, Generator Loss %.4f" \
+                        %((i + epoch*60000/batch_size), disc_loss, gen_loss))
+                print("Discriminator Loss breakdown - Labelled %.4f, Fake %.4f, Unlabelled %.4f" \
+                    %( labelled_loss, fake_loss, unlabelled_loss))
         test_losses=[]
         test_accuracies=[]
+        #TODO: Implement Checkpoints
         for i in xrange(int(x_test.shape[0]/batch_size)):
             feed_dict = {noise: np.zeros([0,100]),
                         real_images: np.zeros([0,784]),
