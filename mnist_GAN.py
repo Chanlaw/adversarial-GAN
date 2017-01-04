@@ -13,7 +13,7 @@ import tensorflow as tf
 #Define flags
 tf.app.flags.DEFINE_integer('batch_size', 100,
                             "Number of digits to process in a batch.")
-tf.app.flags.DEFINE_integer('num_epochs', 300,
+tf.app.flags.DEFINE_integer('num_epochs', 1000,
                             "Number of times to process MNIST data.")
 tf.app.flags.DEFINE_integer('examples_per_class', 100,
                             "Number of examples to give per MNIST Class")
