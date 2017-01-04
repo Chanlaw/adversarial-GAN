@@ -17,7 +17,7 @@ tf.app.flags.DEFINE_integer('num_epochs', 300,
                             "Number of times to process MNIST data.")
 tf.app.flags.DEFINE_integer('examples_per_class', 100,
                             "Number of examples to give per MNIST Class")
-tf.app.flags.DEFINE_integer('learning_rate', 0.0005,
+tf.app.flags.DEFINE_integer('learning_rate', 0.003,
                             "Learning rate for use in training")
 FLAGS = tf.app.flags.FLAGS
 
@@ -98,12 +98,13 @@ labels = tf.placeholder(tf.int64, shape=[None])
 logits_unl, logits_fake, logits_lbl = tf.split(d_output, [num_unl, num_unl, num_lbl],0)
 
 #TODO: Historical Averaging
-loss_d_unl = tf.reduce_mean((- tf.log(tf.reduce_sum(tf.exp(logits_unl), 1)) + tf.log(tf.reduce_sum(tf.exp(logits_unl))+1)))
+loss_d_unl = tf.reduce_mean(- tf.log(tf.reduce_sum(tf.exp(logits_unl), axis=1)) \
+            + tf.log(tf.reduce_sum(tf.exp(logits_unl),axis=1)+1))
 loss_d_lbl = tf.cond(tf.greater(num_lbl, 0), 
                     lambda: tf.reduce_mean(
                         tf.nn.softmax_cross_entropy_with_logits(logits_lbl, tf.one_hot(labels, 10))), 
                     lambda: tf.constant(0.))
-loss_d_fake = tf.reduce_mean(tf.nn.softplus(logits_fake))
+loss_d_fake = tf.reduce_mean(tf.log(tf.reduce_sum(tf.exp(logits_unl),axis=1)+1))
 loss_d = loss_d_unl + loss_d_lbl + loss_d_fake
 
 real_activations, fake_activations, _ = tf.split(d4, [num_unl, num_unl, num_lbl], 0) 
@@ -117,11 +118,11 @@ with sess.as_default():
     d_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
     g_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
     gvs = d_optimizer.compute_gradients(loss_d, 
-                    var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="discriminator"))
-    clipped_gradients=[(tf.clip_by_norm(grad, 10.0), var) for grad, var in gvs] #clip to prevent blowup from relu units
+                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="discriminator"))
+    clipped_gradients=[(tf.clip_by_norm(grad, 10.0), var) for grad, var in gvs]
     d_train_op = d_optimizer.apply_gradients(clipped_gradients)
     g_train_op = g_optimizer.minimize(loss_g,
-                    var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="generator"))
+                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="generator"))
     init = tf.global_variables_initializer()
     sess.run(init)
     for epoch in xrange(FLAGS.num_epochs):
