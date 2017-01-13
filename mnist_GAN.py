@@ -116,6 +116,10 @@ loss_g = tf.reduce_mean(tf.square(tf.reduce_mean(real_activations,axis=0)
 accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits_lbl,axis=1),labels), tf.float32))
 prob_lbl = 1 - tf.reduce_mean(1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1))
 
+#create summary ops 
+#merged summary for training: loss_g, loss_d, gen_images
+#merged summary for evaluation: accuracy, prob_lbl, loss_d
+
 #train the network
 sess = tf.Session()
 with sess.as_default():
@@ -182,3 +186,13 @@ with sess.as_default():
         print("Test Loss: %.4f Test Accuracy: %.4f Avg Prob Real: %.4f" \
                 %(sum(test_losses)/len(test_losses), sum(test_accuracies)/len(test_accuracies), \
                     sum(test_prob)/len(test_prob)))
+        
+    #adversarial example evaluation
+    #FGSM 
+    epsilon=0.1
+    optimizer = tf.train.GradientDescentOptimizer()
+    pertubation = epsilon * tf.sign(optimizer.compute_gradients(loss_d_lbl, var_list=[real_images]))
+    #image summary for real_images, pertubation 
+    #apply pertubation to random images 
+    #feed perturbed images into classifier
+    
