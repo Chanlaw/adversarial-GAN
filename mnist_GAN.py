@@ -98,7 +98,7 @@ num_unl = tf.placeholder(tf.int64, shape=[])
 num_lbl = tf.placeholder(tf.int64, shape=[]) #num of labelled examples for supervised training
 labels = tf.placeholder(tf.int64, shape=[None])
 
-logits_unl, logits_fake, logits_lbl = tf.split(0, [num_unl, num_unl, num_lbl], d_output)
+logits_unl, logits_fake, logits_lbl = tf.split_v(d_output, [num_unl, num_unl, num_lbl], 0)
 #TODO: Historical Averaging
 loss_d_unl = tf.reduce_mean(- tf.log(tf.reduce_sum(tf.exp(logits_unl), axis=1)) \
             + tf.log(tf.reduce_sum(tf.exp(logits_unl),axis=1)+1))
@@ -109,7 +109,7 @@ loss_d_lbl = tf.cond(tf.greater(num_lbl, 0),
 loss_d_fake = tf.reduce_mean(tf.log(tf.reduce_sum(tf.exp(logits_fake),axis=1)+1))
 loss_d = loss_d_unl + loss_d_lbl + loss_d_fake
 
-real_activations, fake_activations, _ = tf.split(d5, [num_unl, num_unl, num_lbl], 0) 
+real_activations, fake_activations, _ = tf.split_v(d5, [num_unl, num_unl, num_lbl], 0) 
 loss_g = tf.reduce_mean(tf.square(tf.reduce_mean(real_activations,axis=0) 
                                 - tf.reduce_mean(fake_activations,axis=0))) 
 
