@@ -57,8 +57,7 @@ real_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="real_images")
 labelled_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="labelled_images")
 with tf.variable_scope("discriminator"):
     with tf.variable_scope("hidden1") as scope:
-        d1 = tf.contrib.layers.fully_connected(
-                gaussian_noise(tf.concat(0, [real_images, gen_images, labelled_images]), sigma=0.3),
+        d1 = tf.contrib.layers.fully_connected(tf.concat(0, [real_images, gen_images, labelled_images]),
                 1000, scope=scope)
     with tf.variable_scope("hidden2") as scope:
         d2 = tf.contrib.layers.fully_connected(gaussian_noise(d1, sigma=0.5), 500, scope=scope)
@@ -124,7 +123,7 @@ accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits_lbl,axis=1),labels),
 prob_lbl = 1 - tf.reduce_mean(1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1))
 
 #FGSM 
-epsilon=0.25
+epsilon=0.1
 pertubation = epsilon * tf.sign(tf.gradients(loss_d_lbl, labelled_images))
 #image summary for real_images, pertubation 
 #apply pertubation to images
