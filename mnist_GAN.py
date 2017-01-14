@@ -98,7 +98,7 @@ num_unl = tf.placeholder(tf.int64, shape=[])
 num_lbl = tf.placeholder(tf.int64, shape=[]) #num of labelled examples for supervised training
 labels = tf.placeholder(tf.int64, shape=[None])
 
-logits_unl, logits_fake, logits_lbl = tf.split(d_output, [num_unl, num_unl, num_lbl],0)
+logits_unl, logits_fake, logits_lbl = tf.split(0, [num_unl, num_unl, num_lbl], d_output)
 #TODO: Historical Averaging
 loss_d_unl = tf.reduce_mean(- tf.log(tf.reduce_sum(tf.exp(logits_unl), axis=1)) \
             + tf.log(tf.reduce_sum(tf.exp(logits_unl),axis=1)+1))
@@ -123,8 +123,8 @@ prob_lbl = 1 - tf.reduce_mean(1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1))
 #train the network
 sess = tf.Session()
 with sess.as_default():
-    d_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
-    g_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
+    d_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=0.5)
+    g_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=0.5)
     gvs = d_optimizer.compute_gradients(loss_d, 
                 var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="discriminator"))
     clipped_gradients=[(tf.clip_by_norm(grad, FLAGS.max_gradient_norm), var) for grad, var in gvs]
