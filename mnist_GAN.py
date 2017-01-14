@@ -86,6 +86,7 @@ assert x_test.shape[0] == 10000
 assert y_test.shape[0] == 10000
 
 #Select labeled data
+np.random.seed(0)
 idx = np.random.permutation(x_train.shape[0]) 
 x_train = x_train[idx]
 y_train = y_train[idx]
