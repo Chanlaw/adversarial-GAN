@@ -6,6 +6,7 @@ https://github.com/openai/improved-gan/blob/master/mnist_svhn_cifar10/train_mnis
 from __future__ import absolute_import, division, print_function
 
 import math
+import os
 
 import numpy as np
 import tensorflow as tf
@@ -16,11 +17,15 @@ tf.app.flags.DEFINE_integer('batch_size', 100,
 tf.app.flags.DEFINE_integer('num_epochs', 300,
                             "Number of times to process MNIST data.")
 tf.app.flags.DEFINE_integer('examples_per_class', 100,
-                            "Number of examples to give per MNIST Class")
+                            "Number of examples to give per MNIST Class.")
 tf.app.flags.DEFINE_float('learning_rate', 0.0001,
-                            "Learning rate for use in training")
+                            "Learning rate for use in training.")
 tf.app.flags.DEFINE_float('max_gradient_norm', 50.0,
-                            "clip discriminator gradients to this norm")
+                            "Clip discriminator gradients to this norm.")
+tf.app.flags.DEFINE_string('log_dir', 'checkpoints', 
+                            "Directory to put checkpoints and tensorboard log files.")
+tf.app.flags.DEFINE_boolean('load_from_checkpoint', False,
+                            "Whether or not we should load a pretrained model from checkpoint.")
 FLAGS = tf.app.flags.FLAGS
 
 #Define global variables
@@ -65,7 +70,7 @@ with tf.variable_scope("discriminator"):
         d5 = tf.contrib.layers.fully_connected(gaussian_noise(d4, sigma=0.5), 250, scope=scope)
     with tf.variable_scope("output") as scope:
         # We only need 10 since we're fixing the logits of the "fake" category to be 0
-        d_output = tf.contrib.layers.fully_connected(gaussian_noise(d5, sigma=0.5),
+        d_output = tf.contrib.layers.fully_connected(gaussian_noise(d5, sigma=0.3),
                                          10, None, scope=scope)
 
 #Load MNIST Data
@@ -92,6 +97,7 @@ for i in xrange(10):
 x_labelled = np.concatenate(x_labelled, axis=0)
 y_labelled = np.concatenate(y_labelled, axis=0)
 
+
 #loss functions
 #TODO: Implement label smoothing
 num_unl = tf.placeholder(tf.int64, shape=[])
@@ -116,15 +122,27 @@ loss_g = tf.reduce_mean(tf.square(tf.reduce_mean(real_activations,axis=0)
 accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits_lbl,axis=1),labels), tf.float32))
 prob_lbl = 1 - tf.reduce_mean(1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1))
 
+#FGSM 
+epsilon=0.25
+pertubation = epsilon * tf.sign(tf.gradients(loss_d_lbl, labelled_images))
+#image summary for real_images, pertubation 
+#apply pertubation to images
+perturbed_images = tf.squeeze(pertubation) + labelled_images
+
 #create summary ops 
 #merged summary for training: loss_g, loss_d, gen_images
-#merged summary for evaluation: accuracy, prob_lbl, loss_d
+#merged summary for evaluation: accuracy, prob_lbl, loss_d, real_images
+#merged summary for adversarial examples: accuracy, prob_lbl, loss_d, real_images, pertubation
+
+if not os.path.exists(FLAGS.log_dir):
+    os.makedirs(FLAGS.log_dir)
 
 #train the network
+saver = tf.train.Saver()
 sess = tf.Session()
 with sess.as_default():
-    d_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=0.5)
-    g_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=0.5)
+    d_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
+    g_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
     gvs = d_optimizer.compute_gradients(loss_d, 
                 var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="discriminator"))
     clipped_gradients=[(tf.clip_by_norm(grad, FLAGS.max_gradient_norm), var) for grad, var in gvs]
@@ -133,9 +151,17 @@ with sess.as_default():
                 var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="generator"))
     init = tf.global_variables_initializer()
     sess.run(init)
+    #load from checkpoint if necessary
+    if (FLAGS.load_from_checkpoint):
+        print("Loading from checkpoint: %s" %tf.train.latest_checkpoint(FLAGS.log_dir))
+        saver.restore(sess, tf.train.latest_checkpoint(FLAGS.log_dir))
+
     for epoch in xrange(FLAGS.num_epochs):
         idx = np.random.permutation(x_unl.shape[0]) 
         x_unl = x_unl[idx]
+        idx = np.random.permutation(x_labelled.shape[0]) 
+        x_labelled = x_labelled[idx]
+        y_labelled = y_labelled[idx]
         print("-------")
         print("Epoch %d:" %(epoch + 1))
         print("-------")
@@ -167,10 +193,10 @@ with sess.as_default():
                         %((i + epoch*60000/batch_size), disc_loss, gen_loss))
                 print("Discriminator Loss breakdown - Labelled %.4f, Fake %.4f, Unlabelled %.4f" \
                     %( labelled_loss, fake_loss, unlabelled_loss))
-        test_prob=[]
+        test_probs=[]
         test_losses=[]
         test_accuracies=[]
-        #TODO: Implement Checkpoints
+        #Evaluate on test data points
         for i in xrange(int(x_test.shape[0]/batch_size)):
             feed_dict = {noise: np.zeros([0,100]),
                         real_images: np.zeros([0,784]),
@@ -180,19 +206,54 @@ with sess.as_default():
                         labels: y_test[i*batch_size: (i+1)*batch_size]}
             disc_prob, disc_acc, disc_loss = \
                         sess.run([prob_lbl, accuracy, loss_d_lbl], feed_dict=feed_dict)
-            test_prob.append(disc_prob)
+            test_probs.append(disc_prob)
             test_losses.append(disc_loss)
             test_accuracies.append(disc_acc)
         print("Test Loss: %.4f Test Accuracy: %.4f Avg Prob Real: %.4f" \
                 %(sum(test_losses)/len(test_losses), sum(test_accuracies)/len(test_accuracies), \
-                    sum(test_prob)/len(test_prob)))
-        
+                    sum(test_probs)/len(test_probs)))
+
+        #Make a checkpoint
+        saver.save(sess, FLAGS.log_dir + '/checkpoint', global_step=(epoch+1))
+    
     #adversarial example evaluation
-    #FGSM 
-    epsilon=0.1
-    optimizer = tf.train.GradientDescentOptimizer()
-    pertubation = epsilon * tf.sign(optimizer.compute_gradients(loss_d_lbl, var_list=[real_images]))
-    #image summary for real_images, pertubation 
-    #apply pertubation to random images 
-    #feed perturbed images into classifier
+    test_probs=[]
+    test_accuracies=[]
+    adv_probs=[]
+    adv_accuracies=[]
+
+    print("-------")
+    print("Evaluating on Adverarial Examples:")
+    for i in xrange(int(x_test.shape[0]/batch_size)):
+        feed_dict = {noise: np.zeros([0,100]),
+                    real_images: np.zeros([0,784]),
+                    labelled_images: x_test[i*batch_size: (i+1)*batch_size],
+                    num_unl: 0,
+                    num_lbl: batch_size,
+                    labels: y_test[i*batch_size: (i+1)*batch_size]}
+        perturbed, disc_prob, disc_acc, disc_loss = \
+                    sess.run([perturbed_images, prob_lbl, accuracy, loss_d_lbl], feed_dict=feed_dict)
+        perturbed_feed = {noise: np.zeros([0,100]),
+                    real_images: np.zeros([0,784]),
+                    labelled_images: perturbed,
+                    num_unl: 0,
+                    num_lbl: batch_size,
+                    labels: y_test[i*batch_size: (i+1)*batch_size]}
+        perturbed_prob, perturbed_acc, perturbed_loss = \
+                    sess.run([prob_lbl, accuracy, loss_d_lbl], feed_dict=perturbed_feed)
+        test_probs.append(disc_prob)
+        test_accuracies.append(disc_acc)
+        adv_probs.append(perturbed_prob)
+        adv_accuracies.append(perturbed_acc)
+
+    test_probs=np.array(test_probs)
+    test_accuracies=np.array(test_accuracies)
+    adv_probs=np.array(adv_probs)
+    adv_accuracies=np.array(adv_accuracies)
+    print("Original Accuracy: %.4f+/-%.4f Adversarial Accuracy: %.4f+/-%.4f" \
+        %(np.mean(test_accuracies), np.std(test_accuracies), 
+            np.mean(adv_accuracies), np.std(adv_accuracies)))
+    print("Original Probability: %.4f+/-%.4f Adversarial Probability: %.4f+/-%.4f" \
+        %(np.mean(test_probs), np.std(test_probs), 
+            np.mean(adv_probs), np.std(adv_probs)))
     
