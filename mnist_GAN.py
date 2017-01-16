@@ -18,7 +18,7 @@ tf.app.flags.DEFINE_integer('num_epochs', 300,
                             "Number of times to process MNIST data.")
 tf.app.flags.DEFINE_integer('examples_per_class', 100,
                             "Number of examples to give per MNIST Class.")
-tf.app.flags.DEFINE_float('learning_rate', 0.003,
+tf.app.flags.DEFINE_float('learning_rate', 0.001,
                             "Learning rate for use in training.")
 tf.app.flags.DEFINE_float('max_gradient_norm', 100.0,
                             "Clip discriminator gradients to this norm.")
@@ -26,6 +26,8 @@ tf.app.flags.DEFINE_string('log_dir', 'checkpoints',
                             "Directory to put checkpoints and tensorboard log files.")
 tf.app.flags.DEFINE_boolean('load_from_checkpoint', False,
                             "Whether or not we should load a pretrained model from checkpoint.")
+tf.app.flags.DEFINE_float('epsilon', 0.25,
+                            "Size of adversarial pertubation.")
 FLAGS = tf.app.flags.FLAGS
 
 #Define global variables
@@ -70,7 +72,7 @@ labelled_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="labelled_
 with tf.variable_scope("discriminator"):
     with tf.variable_scope("hidden1") as scope:
         d1 = fully_connected(
-                gaussian_noise(tf.concat(0, [real_images, gen_images, labelled_images]),sigma=0.3),
+                gaussian_noise(tf.concat_v2([real_images, gen_images, labelled_images],0), sigma=0.3),
                 MNIST_SIZE, 1000, train_scale=False, scope=scope)
     with tf.variable_scope("hidden2") as scope:
         d2 = fully_connected(gaussian_noise(d1, sigma=0.5), 1000, 500, train_scale=False, scope=scope)
@@ -123,9 +125,8 @@ loss_d_unl = 0.5 * tf.reduce_mean(- tf.log(tf.reduce_sum(tf.exp(logits_unl), axi
 loss_d_fake = 0.5 * tf.reduce_mean(tf.log(tf.reduce_sum(tf.exp(logits_fake),axis=1)+1))
 loss_d_lbl = tf.cond(tf.greater(num_lbl, 0), 
                     lambda: tf.reduce_mean(
-                        tf.nn.softmax_cross_entropy_with_logits(logits_lbl, tf.one_hot(labels,10))
-                        - tf.log(tf.reduce_sum(tf.exp(logits_lbl), axis=1) + 1e-8) \
-                        + tf.log(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1)),
+                        tf.nn.softmax_cross_entropy_with_logits(logits=logits_lbl, 
+                                                                labels=tf.one_hot(labels,10))),
                     lambda: tf.constant(0.))
 loss_d = loss_d_unl + loss_d_fake + loss_d_lbl 
 
@@ -136,10 +137,11 @@ loss_g = tf.reduce_mean(tf.square(tf.reduce_mean(real_activations,axis=0)
 accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits_lbl,axis=1),labels), tf.float32))
 prob_lbl = 1 - tf.reduce_mean(1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1))
 
-softmax_loss_lbl = tf.nn.softmax_cross_entropy_with_logits(logits_lbl, tf.one_hot(labels,10))
+softmax_loss_lbl = tf.nn.softmax_cross_entropy_with_logits(logits=logits_lbl, 
+                                                            labels=tf.one_hot(labels,10))
 
 #FGSM 
-epsilon=0.25
+epsilon=FLAGS.epsilon
 pertubation = epsilon * tf.sign(tf.gradients(softmax_loss_lbl, labelled_images))
 #image summary for real_images, pertubation 
 #apply pertubation to images
@@ -177,7 +179,7 @@ with sess.as_default():
         x_unl = x_unl[idx]
         x_lbl = []
         y_lbl = []
-        for i in xrange(int(x_train.shape[0]/x_labelled.shape[0])):
+        for i in xrange(int(math.ceil(x_unl.shape[0]/x_labelled.shape[0]))):
             idx = np.random.permutation(x_labelled.shape[0]) 
             x_lbl.append(x_labelled[idx])
             y_lbl.append(y_labelled[idx])
