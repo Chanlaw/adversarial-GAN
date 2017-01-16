@@ -99,7 +99,7 @@ assert x_test.shape[0] == 10000
 assert y_test.shape[0] == 10000
 
 #Select labeled data
-np.random.seed(1)
+np.random.seed(0)
 idx = np.random.permutation(x_train.shape[0]) 
 x_train = x_train[idx]
 y_train = y_train[idx]
@@ -204,10 +204,12 @@ with sess.as_default():
                         %((i + epoch*60000/batch_size), disc_loss, gen_loss))
                 print("Discriminator Loss breakdown - Labelled %.4f, Fake %.4f, Unlabelled %.4f" \
                     %( labelled_loss, fake_loss, unlabelled_loss))
+        #adversarial example evaluation
         test_probs=[]
-        test_losses=[]
         test_accuracies=[]
-        #Evaluate on test data points
+        adv_probs=[]
+        adv_accuracies=[]
+        print("- Evaluating on Test and Adverarial (epsilon=%.4f) Data:" %epsilon)
         for i in xrange(int(x_test.shape[0]/batch_size)):
             feed_dict = {noise: np.zeros([0,100]),
                         real_images: np.zeros([0,784]),
@@ -215,56 +217,70 @@ with sess.as_default():
                         num_unl: 0,
                         num_lbl: batch_size,
                         labels: y_test[i*batch_size: (i+1)*batch_size]}
-            disc_prob, disc_acc, disc_loss = \
-                        sess.run([prob_lbl, accuracy, loss_d_lbl], feed_dict=feed_dict)
+            perturbed, disc_prob, disc_acc, disc_loss = \
+                        sess.run([perturbed_images, prob_lbl, accuracy, loss_d_lbl], feed_dict=feed_dict)
+            perturbed_feed = {noise: np.zeros([0,100]),
+                        real_images: np.zeros([0,784]),
+                        labelled_images: perturbed,
+                        num_unl: 0,
+                        num_lbl: batch_size,
+                        labels: y_test[i*batch_size: (i+1)*batch_size]}
+            perturbed_prob, perturbed_acc, perturbed_loss = \
+                        sess.run([prob_lbl, accuracy, loss_d_lbl], feed_dict=perturbed_feed)
             test_probs.append(disc_prob)
-            test_losses.append(disc_loss)
             test_accuracies.append(disc_acc)
-        print("Test Loss: %.4f Test Accuracy: %.4f Avg Prob Real: %.4f" \
-                %(sum(test_losses)/len(test_losses), sum(test_accuracies)/len(test_accuracies), \
-                    sum(test_probs)/len(test_probs)))
+            adv_probs.append(perturbed_prob)
+            adv_accuracies.append(perturbed_acc)
 
+        test_probs=np.array(test_probs)
+        test_accuracies=np.array(test_accuracies)
+        adv_probs=np.array(adv_probs)
+        adv_accuracies=np.array(adv_accuracies)
+        print("Original Accuracy: %.4f+/-%.4f Adversarial Accuracy: %.4f+/-%.4f" \
+            %(np.mean(test_accuracies), np.std(test_accuracies), 
+                np.mean(adv_accuracies), np.std(adv_accuracies)))
+        print("Original Probability: %.4f+/-%.4f Adversarial Probability: %.4f+/-%.4f" \
+            %(np.mean(test_probs), np.std(test_probs), 
+                np.mean(adv_probs), np.std(adv_probs)))
+    
         #Make a checkpoint
         saver.save(sess, FLAGS.log_dir + '/checkpoint', global_step=(epoch+1))
-    
-    #adversarial example evaluation
-    test_probs=[]
-    test_accuracies=[]
-    adv_probs=[]
-    adv_accuracies=[]
 
-    print("-------")
-    print("Evaluating on Adverarial Examples:")
-    for i in xrange(int(x_test.shape[0]/batch_size)):
-        feed_dict = {noise: np.zeros([0,100]),
-                    real_images: np.zeros([0,784]),
-                    labelled_images: x_test[i*batch_size: (i+1)*batch_size],
-                    num_unl: 0,
-                    num_lbl: batch_size,
-                    labels: y_test[i*batch_size: (i+1)*batch_size]}
-        perturbed, disc_prob, disc_acc, disc_loss = \
-                    sess.run([perturbed_images, prob_lbl, accuracy, loss_d_lbl], feed_dict=feed_dict)
-        perturbed_feed = {noise: np.zeros([0,100]),
-                    real_images: np.zeros([0,784]),
-                    labelled_images: perturbed,
-                    num_unl: 0,
-                    num_lbl: batch_size,
-                    labels: y_test[i*batch_size: (i+1)*batch_size]}
-        perturbed_prob, perturbed_acc, perturbed_loss = \
-                    sess.run([prob_lbl, accuracy, loss_d_lbl], feed_dict=perturbed_feed)
-        test_probs.append(disc_prob)
-        test_accuracies.append(disc_acc)
-        adv_probs.append(perturbed_prob)
-        adv_accuracies.append(perturbed_acc)
+test_probs=[]
+test_accuracies=[]
+adv_probs=[]
+adv_accuracies=[]
+print("----")
+print("Evaluating on Test and Adverarial Data:")
+for i in xrange(int(x_test.shape[0]/batch_size)):
+    feed_dict = {noise: np.zeros([0,100]),
+                real_images: np.zeros([0,784]),
+                labelled_images: x_test[i*batch_size: (i+1)*batch_size],
+                num_unl: 0,
+                num_lbl: batch_size,
+                labels: y_test[i*batch_size: (i+1)*batch_size]}
+    perturbed, disc_prob, disc_acc, disc_loss = \
+                sess.run([perturbed_images, prob_lbl, accuracy, loss_d_lbl], feed_dict=feed_dict)
+    perturbed_feed = {noise: np.zeros([0,100]),
+                real_images: np.zeros([0,784]),
+                labelled_images: perturbed,
+                num_unl: 0,
+                num_lbl: batch_size,
+                labels: y_test[i*batch_size: (i+1)*batch_size]}
+    perturbed_prob, perturbed_acc, perturbed_loss = \
+                sess.run([prob_lbl, accuracy, loss_d_lbl], feed_dict=perturbed_feed)
+    test_probs.append(disc_prob)
+    test_accuracies.append(disc_acc)
+    adv_probs.append(perturbed_prob)
+    adv_accuracies.append(perturbed_acc)
 
-    test_probs=np.array(test_probs)
-    test_accuracies=np.array(test_accuracies)
-    adv_probs=np.array(adv_probs)
-    adv_accuracies=np.array(adv_accuracies)
-    print("Original Accuracy: %.4f+/-%.4f Adversarial Accuracy: %.4f+/-%.4f" \
-        %(np.mean(test_accuracies), np.std(test_accuracies), 
-            np.mean(adv_accuracies), np.std(adv_accuracies)))
-    print("Original Probability: %.4f+/-%.4f Adversarial Probability: %.4f+/-%.4f" \
-        %(np.mean(test_probs), np.std(test_probs), 
-            np.mean(adv_probs), np.std(adv_probs)))
-    
+test_probs=np.array(test_probs)
+test_accuracies=np.array(test_accuracies)
+adv_probs=np.array(adv_probs)
+adv_accuracies=np.array(adv_accuracies)
+print("Original Accuracy: %.4f+/-%.4f Adversarial Accuracy: %.4f+/-%.4f" \
+    %(np.mean(test_accuracies), np.std(test_accuracies), 
+        np.mean(adv_accuracies), np.std(adv_accuracies)))
+print("Original Probability: %.4f+/-%.4f Adversarial Probability: %.4f+/-%.4f" \
+    %(np.mean(test_probs), np.std(test_probs), 
+        np.mean(adv_probs), np.std(adv_probs)))
