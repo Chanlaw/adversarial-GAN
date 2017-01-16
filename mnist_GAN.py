@@ -18,9 +18,9 @@ tf.app.flags.DEFINE_integer('num_epochs', 300,
                             "Number of times to process MNIST data.")
 tf.app.flags.DEFINE_integer('examples_per_class', 100,
                             "Number of examples to give per MNIST Class.")
-tf.app.flags.DEFINE_float('learning_rate', 0.0001,
+tf.app.flags.DEFINE_float('learning_rate', 0.001,
                             "Learning rate for use in training.")
-tf.app.flags.DEFINE_float('max_gradient_norm', 50.0,
+tf.app.flags.DEFINE_float('max_gradient_norm', 100.0,
                             "Clip discriminator gradients to this norm.")
 tf.app.flags.DEFINE_string('log_dir', 'checkpoints', 
                             "Directory to put checkpoints and tensorboard log files.")
@@ -35,6 +35,18 @@ batch_size=FLAGS.batch_size
 def gaussian_noise(x, sigma):
     noise = tf.random_normal(tf.shape(x), 0, sigma)
     return x + noise 
+
+def fully_connected(x, input_len, num_units, activation=tf.nn.relu, train_scale=True, scope=None):
+    #simple fully connected layer with weight scaling
+    with tf.variable_scope("fully_connected"):
+        g = tf.get_variable("g", [num_units], initializer=tf.ones_initializer(), trainable=train_scale)
+        V = tf.get_variable("weights", [input_len, num_units])
+        W = g * V / (1e-8 + tf.sqrt(tf.reduce_sum(tf.square(V),axis=0)))
+        b = tf.get_variable("biases", [num_units], initializer=tf.constant_initializer(0))
+        outputs = tf.matmul(x, W) + b
+        if activation is not None:
+            outputs = activation(outputs)
+        return outputs
 
 #Generator network with 3 hidden layers with batch normalization
 #TODO: Implement virtual batch norm 
@@ -57,20 +69,20 @@ real_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="real_images")
 labelled_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="labelled_images")
 with tf.variable_scope("discriminator"):
     with tf.variable_scope("hidden1") as scope:
-        d1 = tf.contrib.layers.fully_connected(tf.concat(0, [real_images, gen_images, labelled_images]),
-                1000, scope=scope)
+        d1 = fully_connected(
+                gaussian_noise(tf.concat(0, [real_images, gen_images, labelled_images]),sigma=0.3),
+                MNIST_SIZE, 1000, train_scale=False, scope=scope)
     with tf.variable_scope("hidden2") as scope:
-        d2 = tf.contrib.layers.fully_connected(gaussian_noise(d1, sigma=0.5), 500, scope=scope)
+        d2 = fully_connected(gaussian_noise(d1, sigma=0.5), 1000, 500, train_scale=False, scope=scope)
     with tf.variable_scope("hidden3") as scope:
-        d3 = tf.contrib.layers.fully_connected(gaussian_noise(d2, sigma=0.5), 250, scope=scope)
+        d3 = fully_connected(gaussian_noise(d2, sigma=0.5), 500, 250, train_scale=False, scope=scope)
     with tf.variable_scope("hidden4") as scope:
-        d4 = tf.contrib.layers.fully_connected(gaussian_noise(d3, sigma=0.5), 250, scope=scope)
+        d4 = fully_connected(gaussian_noise(d3, sigma=0.5), 250, 250, train_scale=False, scope=scope)
     with tf.variable_scope("hidden5") as scope:
-        d5 = tf.contrib.layers.fully_connected(gaussian_noise(d4, sigma=0.5), 250, scope=scope)
+        d5 = fully_connected(gaussian_noise(d4, sigma=0.5), 250, 250, train_scale=False, scope=scope)
     with tf.variable_scope("output") as scope:
         # We only need 10 since we're fixing the logits of the "fake" category to be 0
-        d_output = tf.contrib.layers.fully_connected(gaussian_noise(d5, sigma=0.3),
-                                         10, None, scope=scope)
+        d_output = fully_connected(gaussian_noise(d5, sigma=0.5), 250, 10, None, scope=scope)
 
 #Load MNIST Data
 data = np.load('mnist.npz')
@@ -85,7 +97,7 @@ assert x_test.shape[0] == 10000
 assert y_test.shape[0] == 10000
 
 #Select labeled data
-np.random.seed(0)
+np.random.seed(1)
 idx = np.random.permutation(x_train.shape[0]) 
 x_train = x_train[idx]
 y_train = y_train[idx]
@@ -108,12 +120,12 @@ logits_unl, logits_fake, logits_lbl = tf.split_v(d_output, [num_unl, num_unl, nu
 #TODO: Historical Averaging
 loss_d_unl = tf.reduce_mean(- tf.log(tf.reduce_sum(tf.exp(logits_unl), axis=1)) \
             + tf.log(tf.reduce_sum(tf.exp(logits_unl),axis=1)+1))
+loss_d_fake = tf.reduce_mean(tf.log(tf.reduce_sum(tf.exp(logits_fake),axis=1)+1))
 loss_d_lbl = tf.cond(tf.greater(num_lbl, 0), 
                     lambda: tf.reduce_mean(
                         tf.nn.softmax_cross_entropy_with_logits(logits_lbl, tf.one_hot(labels,10))), 
                     lambda: tf.constant(0.))
-loss_d_fake = tf.reduce_mean(tf.log(tf.reduce_sum(tf.exp(logits_fake),axis=1)+1))
-loss_d = loss_d_unl + loss_d_lbl + loss_d_fake
+loss_d = loss_d_unl + loss_d_fake + loss_d_lbl 
 
 real_activations, fake_activations, _ = tf.split_v(d5, [num_unl, num_unl, num_lbl], 0) 
 loss_g = tf.reduce_mean(tf.square(tf.reduce_mean(real_activations,axis=0) 
@@ -123,7 +135,7 @@ accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits_lbl,axis=1),labels),
 prob_lbl = 1 - tf.reduce_mean(1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1))
 
 #FGSM 
-epsilon=0.1
+epsilon=0.25
 pertubation = epsilon * tf.sign(tf.gradients(loss_d_lbl, labelled_images))
 #image summary for real_images, pertubation 
 #apply pertubation to images
@@ -141,8 +153,8 @@ if not os.path.exists(FLAGS.log_dir):
 saver = tf.train.Saver()
 sess = tf.Session()
 with sess.as_default():
-    d_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
-    g_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
+    d_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=0.5)
+    g_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=0.5)
     gvs = d_optimizer.compute_gradients(loss_d, 
                 var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="discriminator"))
     clipped_gradients=[(tf.clip_by_norm(grad, FLAGS.max_gradient_norm), var) for grad, var in gvs]
