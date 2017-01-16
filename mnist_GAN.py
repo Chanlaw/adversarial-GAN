@@ -18,7 +18,7 @@ tf.app.flags.DEFINE_integer('num_epochs', 300,
                             "Number of times to process MNIST data.")
 tf.app.flags.DEFINE_integer('examples_per_class', 100,
                             "Number of examples to give per MNIST Class.")
-tf.app.flags.DEFINE_float('learning_rate', 0.001,
+tf.app.flags.DEFINE_float('learning_rate', 0.003,
                             "Learning rate for use in training.")
 tf.app.flags.DEFINE_float('max_gradient_norm', 100.0,
                             "Clip discriminator gradients to this norm.")
@@ -118,12 +118,14 @@ labels = tf.placeholder(tf.int64, shape=[None])
 
 logits_unl, logits_fake, logits_lbl = tf.split_v(d_output, [num_unl, num_unl, num_lbl], 0)
 #TODO: Historical Averaging
-loss_d_unl = tf.reduce_mean(- tf.log(tf.reduce_sum(tf.exp(logits_unl), axis=1)) \
+loss_d_unl = 0.5 * tf.reduce_mean(- tf.log(tf.reduce_sum(tf.exp(logits_unl), axis=1) + 1e-8) \
             + tf.log(tf.reduce_sum(tf.exp(logits_unl),axis=1)+1))
-loss_d_fake = tf.reduce_mean(tf.log(tf.reduce_sum(tf.exp(logits_fake),axis=1)+1))
+loss_d_fake = 0.5 * tf.reduce_mean(tf.log(tf.reduce_sum(tf.exp(logits_fake),axis=1)+1))
 loss_d_lbl = tf.cond(tf.greater(num_lbl, 0), 
                     lambda: tf.reduce_mean(
-                        tf.nn.softmax_cross_entropy_with_logits(logits_lbl, tf.one_hot(labels,10))), 
+                        tf.nn.softmax_cross_entropy_with_logits(logits_lbl, tf.one_hot(labels,10))
+                        - tf.log(tf.reduce_sum(tf.exp(logits_lbl), axis=1) + 1e-8) \
+                        + tf.log(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1)),
                     lambda: tf.constant(0.))
 loss_d = loss_d_unl + loss_d_fake + loss_d_lbl 
 
@@ -134,9 +136,11 @@ loss_g = tf.reduce_mean(tf.square(tf.reduce_mean(real_activations,axis=0)
 accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits_lbl,axis=1),labels), tf.float32))
 prob_lbl = 1 - tf.reduce_mean(1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1))
 
+softmax_loss_lbl = tf.nn.softmax_cross_entropy_with_logits(logits_lbl, tf.one_hot(labels,10))
+
 #FGSM 
 epsilon=0.25
-pertubation = epsilon * tf.sign(tf.gradients(loss_d_lbl, labelled_images))
+pertubation = epsilon * tf.sign(tf.gradients(softmax_loss_lbl, labelled_images))
 #image summary for real_images, pertubation 
 #apply pertubation to images
 perturbed_images = tf.squeeze(pertubation) + labelled_images
@@ -171,35 +175,28 @@ with sess.as_default():
     for epoch in xrange(FLAGS.num_epochs):
         idx = np.random.permutation(x_unl.shape[0]) 
         x_unl = x_unl[idx]
-        idx = np.random.permutation(x_labelled.shape[0]) 
-        x_labelled = x_labelled[idx]
-        y_labelled = y_labelled[idx]
+        x_lbl = []
+        y_lbl = []
+        for i in xrange(int(x_train.shape[0]/x_labelled.shape[0])):
+            idx = np.random.permutation(x_labelled.shape[0]) 
+            x_lbl.append(x_labelled[idx])
+            y_lbl.append(y_labelled[idx])
+        x_lbl = np.concatenate(x_lbl, axis=0)
+        y_lbl = np.concatenate(y_lbl, axis=0)
         print("-------")
         print("Epoch %d:" %(epoch + 1))
         print("-------")
         for i in xrange(int(x_train.shape[0]/batch_size)):
-            if y_labelled[i*batch_size: (i+1)*batch_size].size > 0:
-                feed_dict = {noise: np.random.randn(batch_size, 100), 
-                            real_images: x_unl[i*batch_size: (i+1)*batch_size], 
-                            labelled_images: x_labelled[i*batch_size: (i+1)*batch_size],
-                            num_unl: batch_size,
-                            num_lbl: len(y_labelled[i*batch_size: (i+1)*batch_size]),
-                            labels: y_labelled[i*batch_size: (i+1)*batch_size]}
-                labelled_loss, unlabelled_loss, fake_loss, train_acc, disc_loss, gen_loss, _ , _ = \
-                        sess.run([loss_d_lbl, loss_d_unl, loss_d_fake, accuracy, loss_d, loss_g,
-                                d_train_op, g_train_op], 
-                                feed_dict=feed_dict)
-            else:
-                feed_dict = {noise: np.random.randn(batch_size, 100), 
-                            real_images: x_unl[i*batch_size: (i+1)*batch_size], 
-                            labelled_images: np.zeros((0,784)),
-                            num_unl: batch_size,
-                            num_lbl: 0,
-                            labels: []}
-                unlabelled_loss, labelled_loss, fake_loss, disc_loss, gen_loss, _ , _ = \
-                        sess.run([loss_d_unl, loss_d_lbl,
-                                loss_d_fake, loss_d, loss_g, d_train_op, g_train_op], 
-                                feed_dict=feed_dict)
+            feed_dict = {noise: np.random.randn(batch_size, 100), 
+                        real_images: x_unl[i*batch_size: (i+1)*batch_size], 
+                        labelled_images: x_lbl[i*batch_size: (i+1)*batch_size],
+                        num_unl: batch_size,
+                        num_lbl: len(y_lbl[i*batch_size: (i+1)*batch_size]),
+                        labels: y_lbl[i*batch_size: (i+1)*batch_size]}
+            labelled_loss, unlabelled_loss, fake_loss, train_acc, disc_loss, gen_loss, _ , _ = \
+                    sess.run([loss_d_lbl, loss_d_unl, loss_d_fake, accuracy, loss_d, loss_g,
+                            d_train_op, g_train_op], 
+                            feed_dict=feed_dict)
             if ((i)%200 == 0):
                 print("Step %d, Discriminator Loss %.4f, Generator Loss %.4f" \
                         %((i + epoch*60000/batch_size), disc_loss, gen_loss))
