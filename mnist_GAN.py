@@ -90,6 +90,7 @@ with tf.variable_scope("discriminator"):
 data = np.load('mnist.npz')
 x_train = np.concatenate([data['x_train'], data['x_valid']], axis=0)
 x_unl = x_train.copy()
+x_unl2 = x_unl.copy()
 y_train = np.concatenate([data['y_train'], data['y_valid']])
 assert x_train.shape[0] == 60000
 assert y_train.shape[0] == 60000
@@ -175,8 +176,8 @@ with sess.as_default():
         saver.restore(sess, tf.train.latest_checkpoint(FLAGS.log_dir))
 
     for epoch in xrange(FLAGS.num_epochs):
-        idx = np.random.permutation(x_unl.shape[0]) 
-        x_unl = x_unl[idx]
+        x_unl = x_unl[np.random.permutation(x_unl.shape[0])]
+        x_unl2 = x_unl2[np.random.permutation(x_unl2.shape[0])]
         x_lbl = []
         y_lbl = []
         for i in xrange(int(math.ceil(x_unl.shape[0]/x_labelled.shape[0]))):
@@ -189,16 +190,25 @@ with sess.as_default():
         print("Epoch %d:" %(epoch + 1))
         print("-------")
         for i in xrange(int(x_train.shape[0]/batch_size)):
+            #train discriminator
             feed_dict = {noise: np.random.randn(batch_size, 100), 
                         real_images: x_unl[i*batch_size: (i+1)*batch_size], 
                         labelled_images: x_lbl[i*batch_size: (i+1)*batch_size],
                         num_unl: batch_size,
                         num_lbl: len(y_lbl[i*batch_size: (i+1)*batch_size]),
                         labels: y_lbl[i*batch_size: (i+1)*batch_size]}
-            labelled_loss, unlabelled_loss, fake_loss, train_acc, disc_loss, gen_loss, _ , _ = \
-                    sess.run([loss_d_lbl, loss_d_unl, loss_d_fake, accuracy, loss_d, loss_g,
-                            d_train_op, g_train_op], 
+            labelled_loss, unlabelled_loss, fake_loss, train_acc, disc_loss, _ = \
+                    sess.run([loss_d_lbl, loss_d_unl, loss_d_fake, accuracy, loss_d, d_train_op], 
                             feed_dict=feed_dict)
+            #train generator 
+            feed_dict = {noise: np.random.randn(batch_size, 100), 
+                        real_images: x_unl2[i*batch_size: (i+1)*batch_size], 
+                        labelled_images: np.zeros([0,784]),
+                        num_unl: batch_size,
+                        num_lbl: 0,
+                        labels: []}
+            gen_loss, _ = sess.run([loss_g, g_train_op], feed_dict=feed_dict)
+
             if ((i)%200 == 0):
                 print("Step %d, Discriminator Loss %.4f, Generator Loss %.4f" \
                         %((i + epoch*60000/batch_size), disc_loss, gen_loss))
