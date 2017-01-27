@@ -63,9 +63,7 @@ with tf.variable_scope("generator"):
             tf.contrib.layers.fully_connected(out1, 500, tf.nn.softplus, scope=scope),
             scope=scope)
     with tf.variable_scope("output") as scope:
-        gen_images = tf.contrib.layers.batch_norm(
-            tf.contrib.layers.fully_connected(out2, MNIST_SIZE, tf.nn.sigmoid, scope=scope),
-            scope=scope)
+        gen_images = fully_connected(out2, 500, MNIST_SIZE, tf.nn.sigmoid, scope=scope)
 #Discriminator network with 5 hidden layers and gaussian noise
 real_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="real_images")
 labelled_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="labelled_images")
