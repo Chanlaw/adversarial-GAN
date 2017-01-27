@@ -40,10 +40,10 @@ def gaussian_noise(x, sigma):
 
 def fully_connected(x, input_len, num_units, activation=tf.nn.relu, train_scale=True, scope=None):
     #simple fully connected layer with weight scaling
-    with tf.variable_scope("fully_connected"):
+    with tf.variable_scope(scope, "fully_connected"):
         g = tf.get_variable("g", [num_units], initializer=tf.ones_initializer(), trainable=train_scale)
         V = tf.get_variable("weights", [input_len, num_units])
-        W = g * V / (1e-8 + tf.sqrt(tf.reduce_sum(tf.square(V),axis=0)))
+        W = g * tf.nn.l2_normalize(V, dim=0, epsilon=1e-12)
         b = tf.get_variable("biases", [num_units], initializer=tf.constant_initializer(0))
         outputs = tf.matmul(x, W) + b
         if activation is not None:
@@ -57,11 +57,11 @@ with tf.variable_scope("generator"):
     with tf.variable_scope("hidden1") as scope:
         out1 = tf.contrib.layers.batch_norm(
             tf.contrib.layers.fully_connected(noise, 500, tf.nn.softplus, scope=scope),
-            scope=scope)
+            scale=False, scope=scope)
     with tf.variable_scope("hidden2") as scope:
         out2 = tf.contrib.layers.batch_norm(
             tf.contrib.layers.fully_connected(out1, 500, tf.nn.softplus, scope=scope),
-            scope=scope)
+            scale=False, scope=scope)
     with tf.variable_scope("output") as scope:
         gen_images = fully_connected(out2, 500, MNIST_SIZE, tf.nn.sigmoid, scope=scope)
 #Discriminator network with 5 hidden layers and gaussian noise
@@ -75,9 +75,9 @@ with tf.variable_scope("discriminator"):
     with tf.variable_scope("hidden2") as scope:
         d2 = fully_connected(gaussian_noise(d1, sigma=0.5), 1000, 500, train_scale=False, scope=scope)
     with tf.variable_scope("hidden3") as scope:
-        d3 = fully_connected(gaussian_noise(d2, sigma=0.5), 500, 250, train_scale=False, scope=scope)
+        d3 = fully_connected(gaussian_noise(d2, sigma=0.5), 500, 500, train_scale=False, scope=scope)
     with tf.variable_scope("hidden4") as scope:
-        d4 = fully_connected(gaussian_noise(d3, sigma=0.5), 250, 250, train_scale=False, scope=scope)
+        d4 = fully_connected(gaussian_noise(d3, sigma=0.5), 500, 250, train_scale=False, scope=scope)
     with tf.variable_scope("hidden5") as scope:
         d5 = fully_connected(gaussian_noise(d4, sigma=0.5), 250, 250, train_scale=False, scope=scope)
     with tf.variable_scope("output") as scope:
@@ -148,8 +148,9 @@ perturbed_images = tf.squeeze(pertubation) + labelled_images
 
 #create summary ops 
 #merged summary for training: loss_g, loss_d, gen_images
+
 #merged summary for evaluation: accuracy, prob_lbl, loss_d, real_images
-#merged summary for adversarial examples: accuracy, prob_lbl, loss_d, real_images, pertubation
+#merged summary for adversarial examples: accuracy, prob_lbl, loss_d, real_images, pertubation, perturbed images
 
 if not os.path.exists(FLAGS.log_dir):
     os.makedirs(FLAGS.log_dir)
