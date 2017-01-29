@@ -134,23 +134,40 @@ loss_g = tf.reduce_mean(tf.square(tf.reduce_mean(real_activations,axis=0)
                                 - tf.reduce_mean(fake_activations,axis=0))) 
 
 accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits_lbl,axis=1),labels), tf.float32))
-prob_lbl = 1 - tf.reduce_mean(1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1))
-
+prob_lbl = 1 - 1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1)
+avg_prob_lbl = tf.reduce_mean(prob_lbl)
 softmax_loss_lbl = tf.nn.softmax_cross_entropy_with_logits(logits=logits_lbl, 
                                                             labels=tf.one_hot(labels,10))
 
 #FGSM 
 epsilon=FLAGS.epsilon
-pertubation = epsilon * tf.sign(tf.gradients(softmax_loss_lbl, labelled_images))
+pertubation = tf.sign(tf.gradients(softmax_loss_lbl, labelled_images))
 #image summary for real_images, pertubation 
 #apply pertubation to images
-perturbed_images = tf.squeeze(pertubation) + labelled_images
+perturbed_images = tf.squeeze(epsilon * pertubation) + labelled_images
 
 #create summary ops 
 #merged summary for training: loss_g, loss_d, gen_images
-
-#merged summary for evaluation: accuracy, prob_lbl, loss_d, real_images
-#merged summary for adversarial examples: accuracy, prob_lbl, loss_d, real_images, pertubation, perturbed images
+loss_g_summary = tf.summary.scalar('loss_g', loss_g)
+loss_d_summary = tf.summary.scalar('loss_d', loss_d)
+loss_d_unl_summary = tf.summary.scalar('loss_d_unl', loss_d_unl)
+loss_d_fake_summary = tf.summary.scalar('loss_d_fake', loss_d_fake)
+loss_d_lbl_summary = tf.summary.scalar('loss_d_lbl', loss_d_lbl)
+accuracy_summary = tf.summary.scalar('accuracy_d', accuracy)
+gen_images_summary = tf.summary.image('gen_images', tf.reshape(gen_images, [batch_size, 28, 28, 1]),
+                                        max_outputs=10)
+train_summary = tf.summary.merge([loss_g_summary, loss_d_summary, loss_d_unl_summary, 
+                                loss_d_fake_summary, loss_d_lbl_summary, accuracy_summary, 
+                                gen_images_summary])
+#merged summary for evaluation and adversarial examples: accuracy, prob_lbl, images, pertubation, perturbed images
+prob_lbl_mean_summary = tf.summary.scalar('prob_lbl_mean', avg_prob_lbl)
+prob_lbl_summary = tf.summary.histogram('prob_lbl', prob_lbl)
+image_summary = tf.summary.image('images', tf.reshape(labelled_images, [batch_size, 28, 28, 1]), max_outputs=10)
+pertubation_summary = tf.summary.image('pertubation', tf.reshape(pertubation, [batch_size, 28, 28, 1]), max_outputs=10)
+test_summary = tf.summary.merge([accuracy_summary, prob_lbl_mean_summary, prob_lbl_summary,
+                                image_summary, pertubation_summary])
+adv_summary = tf.summary.merge([accuracy_summary, prob_lbl_mean_summary, prob_lbl_summary,
+                                image_summary])
 
 if not os.path.exists(FLAGS.log_dir):
     os.makedirs(FLAGS.log_dir)
@@ -167,6 +184,9 @@ with sess.as_default():
     d_train_op = d_optimizer.apply_gradients(clipped_gradients)
     g_train_op = g_optimizer.minimize(loss_g,
                 var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="generator"))
+    train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train', sess.graph)
+    test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test')
+    adv_writer = tf.summary.FileWriter(FLAGS.log_dir + '/adv')
     init = tf.global_variables_initializer()
     sess.run(init)
     #load from checkpoint if necessary
@@ -189,30 +209,31 @@ with sess.as_default():
         print("Epoch %d:" %(epoch + 1))
         print("-------")
         for i in xrange(int(x_train.shape[0]/batch_size)):
-            #train discriminator
-            feed_dict = {noise: np.random.randn(batch_size, 100), 
+            feed_dict_d = {noise: np.random.randn(batch_size, 100), 
                         real_images: x_unl[i*batch_size: (i+1)*batch_size], 
                         labelled_images: x_lbl[i*batch_size: (i+1)*batch_size],
                         num_unl: batch_size,
                         num_lbl: len(y_lbl[i*batch_size: (i+1)*batch_size]),
                         labels: y_lbl[i*batch_size: (i+1)*batch_size]}
-            labelled_loss, unlabelled_loss, fake_loss, train_acc, disc_loss, _ = \
-                    sess.run([loss_d_lbl, loss_d_unl, loss_d_fake, accuracy, loss_d, d_train_op], 
-                            feed_dict=feed_dict)
-            #train generator 
-            feed_dict = {noise: np.random.randn(batch_size, 100), 
+            feed_dict_g = {noise: np.random.randn(batch_size, 100), 
                         real_images: x_unl2[i*batch_size: (i+1)*batch_size], 
                         labelled_images: np.zeros([0,784]),
                         num_unl: batch_size,
                         num_lbl: 0,
                         labels: []}
-            gen_loss, _ = sess.run([loss_g, g_train_op], feed_dict=feed_dict)
-
             if ((i)%200 == 0):
+                labelled_loss, unlabelled_loss, fake_loss, train_acc, disc_loss, _ , summary = \
+                    sess.run([loss_d_lbl, loss_d_unl, loss_d_fake, accuracy, loss_d, d_train_op, 
+                            train_summary], feed_dict=feed_dict_d)
+                gen_loss, _ = sess.run([loss_g, g_train_op], feed_dict=feed_dict_g)
                 print("Step %d, Discriminator Loss %.4f, Generator Loss %.4f" \
-                        %((i + epoch*60000/batch_size), disc_loss, gen_loss))
+                        %((i + epoch*60000//batch_size), disc_loss, gen_loss))
                 print("Discriminator Loss breakdown - Labelled %.4f, Fake %.4f, Unlabelled %.4f" \
                     %( labelled_loss, fake_loss, unlabelled_loss))
+                train_writer.add_summary(summary, (i + epoch*60000//batch_size))
+            else:
+                _ = sess.run([d_train_op], feed_dict=feed_dict_d)
+                _ = sess.run([g_train_op], feed_dict=feed_dict_g)
         #adversarial example evaluation
         test_probs=[]
         test_accuracies=[]
@@ -226,16 +247,29 @@ with sess.as_default():
                         num_unl: 0,
                         num_lbl: batch_size,
                         labels: y_test[i*batch_size: (i+1)*batch_size]}
-            perturbed, disc_prob, disc_acc, disc_loss = \
-                        sess.run([perturbed_images, prob_lbl, accuracy, loss_d_lbl], feed_dict=feed_dict)
+            if(i==0):
+                perturbed, disc_prob, disc_acc, disc_loss, summary= \
+                        sess.run([perturbed_images, avg_prob_lbl, accuracy, loss_d_lbl, test_summary], 
+                        feed_dict=feed_dict)
+                test_writer.add_summary(summary, epoch*60000//batch_size)
+            else:
+                perturbed, disc_prob, disc_acc, disc_loss = \
+                        sess.run([perturbed_images, avg_prob_lbl, accuracy, loss_d_lbl], 
+                        feed_dict=feed_dict)
             perturbed_feed = {noise: np.zeros([0,100]),
                         real_images: np.zeros([0,784]),
                         labelled_images: perturbed,
                         num_unl: 0,
                         num_lbl: batch_size,
                         labels: y_test[i*batch_size: (i+1)*batch_size]}
-            perturbed_prob, perturbed_acc, perturbed_loss = \
-                        sess.run([prob_lbl, accuracy, loss_d_lbl], feed_dict=perturbed_feed)
+            if(i == 0):
+                perturbed_prob, perturbed_acc, perturbed_loss, summary= \
+                        sess.run([avg_prob_lbl, accuracy, loss_d_lbl, adv_summary], 
+                                feed_dict=perturbed_feed)
+                adv_writer.add_summary(summary, epoch*60000//batch_size)
+            else:
+                perturbed_prob, perturbed_acc, perturbed_loss = \
+                        sess.run([avg_prob_lbl, accuracy, loss_d_lbl], feed_dict=perturbed_feed)
             test_probs.append(disc_prob)
             test_accuracies.append(disc_acc)
             adv_probs.append(perturbed_prob)
