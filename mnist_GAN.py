@@ -98,7 +98,7 @@ assert x_test.shape[0] == 10000
 assert y_test.shape[0] == 10000
 
 #Select labeled data
-np.random.seed(0)
+np.random.seed(2)
 idx = np.random.permutation(x_train.shape[0]) 
 x_train = x_train[idx]
 y_train = y_train[idx]
@@ -150,11 +150,12 @@ with tf.name_scope('adv'):
 #create summary ops 
 #merged summary for training: loss_g, loss_d, gen_images
 
-loss_g_summary = tf.summary.scalar('loss_g', loss_g)
-loss_d_summary = tf.summary.scalar('loss_d', loss_d)
-loss_d_unl_summary = tf.summary.scalar('loss_d_unl', loss_d_unl)
-loss_d_fake_summary = tf.summary.scalar('loss_d_fake', loss_d_fake)
-loss_d_lbl_summary = tf.summary.scalar('loss_d_lbl', loss_d_lbl)
+with tf.name_scope('loss'):
+    loss_g_summary = tf.summary.scalar('generator', loss_g)
+    loss_d_summary = tf.summary.scalar('discriminator', loss_d)
+    loss_d_unl_summary = tf.summary.scalar('discriminator_unl', loss_d_unl)
+    loss_d_fake_summary = tf.summary.scalar('discriminator_fake', loss_d_fake)
+    loss_d_lbl_summary = tf.summary.scalar('discriminator_lbl', loss_d_lbl)
 accuracy_summary = tf.summary.scalar('accuracy_d', accuracy)
 gen_images_summary = tf.summary.image('gen_images', tf.reshape(gen_images, [batch_size, 28, 28, 1]),
                                         max_outputs=10)
@@ -244,6 +245,7 @@ with sess.as_default():
         adv_probs=[]
         adv_accuracies=[]
         print("- Evaluating on Test and Adverarial (epsilon=%.4f) Data:" %epsilon)
+        eval_n = np.random.randint(int(x_test.shape[0]/batch_size))
         for i in xrange(int(x_test.shape[0]/batch_size)):
             feed_dict = {noise: np.zeros([0,100]),
                         real_images: np.zeros([0,784]),
@@ -251,7 +253,7 @@ with sess.as_default():
                         num_unl: 0,
                         num_lbl: batch_size,
                         labels: y_test[i*batch_size: (i+1)*batch_size]}
-            if(i==0):
+            if(i==eval_n):
                 perturbed, disc_prob, disc_acc, disc_loss, summary= \
                         sess.run([perturbed_images, avg_prob_lbl, accuracy, loss_d_lbl, test_summary], 
                         feed_dict=feed_dict)
@@ -266,7 +268,7 @@ with sess.as_default():
                         num_unl: 0,
                         num_lbl: batch_size,
                         labels: y_test[i*batch_size: (i+1)*batch_size]}
-            if(i == 0):
+            if(i == eval_n):
                 perturbed_prob, perturbed_acc, perturbed_loss, summary= \
                         sess.run([avg_prob_lbl, accuracy, loss_d_lbl, adv_summary], 
                                 feed_dict=perturbed_feed)
