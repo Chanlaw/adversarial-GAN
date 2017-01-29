@@ -8,3 +8,9 @@ Replicate by running:
 ```
 python mnist_GAN.py
 ```
+To use tensorboard to look at the images, run:
+```
+tensorboard --log_dir=checkpoints
+```
+
+Developed using Tensorflow 0.12.1.
