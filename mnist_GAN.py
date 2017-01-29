@@ -117,37 +117,39 @@ num_unl = tf.placeholder(tf.int64, shape=[])
 num_lbl = tf.placeholder(tf.int64, shape=[]) #num of labelled examples for supervised training
 labels = tf.placeholder(tf.int64, shape=[None])
 
-logits_unl, logits_fake, logits_lbl = tf.split_v(d_output, [num_unl, num_unl, num_lbl], 0)
-#TODO: Historical Averaging
-loss_d_unl = 0.5 * tf.reduce_mean(- tf.log(tf.reduce_sum(tf.exp(logits_unl), axis=1) + 1e-8) \
-            + tf.log(tf.reduce_sum(tf.exp(logits_unl),axis=1)+1))
-loss_d_fake = 0.5 * tf.reduce_mean(tf.log(tf.reduce_sum(tf.exp(logits_fake),axis=1)+1))
-loss_d_lbl = tf.cond(tf.greater(num_lbl, 0), 
-                    lambda: tf.reduce_mean(
-                        tf.nn.softmax_cross_entropy_with_logits(logits=logits_lbl, 
-                                                                labels=tf.one_hot(labels,10))),
-                    lambda: tf.constant(0.))
-loss_d = loss_d_unl + loss_d_fake + loss_d_lbl 
+with tf.name_scope('eval'):
+    logits_unl, logits_fake, logits_lbl = tf.split_v(d_output, [num_unl, num_unl, num_lbl], 0)
+    #TODO: Historical Averaging
+    loss_d_unl = 0.5 * tf.reduce_mean(- tf.log(tf.reduce_sum(tf.exp(logits_unl), axis=1) + 1e-8) \
+                + tf.log(tf.reduce_sum(tf.exp(logits_unl),axis=1)+1))
+    loss_d_fake = 0.5 * tf.reduce_mean(tf.log(tf.reduce_sum(tf.exp(logits_fake),axis=1)+1))
+    loss_d_lbl = tf.cond(tf.greater(num_lbl, 0), 
+                        lambda: tf.reduce_mean(
+                            tf.nn.softmax_cross_entropy_with_logits(logits=logits_lbl, 
+                                                                    labels=tf.one_hot(labels,10))),
+                        lambda: tf.constant(0.))
+    loss_d = loss_d_unl + loss_d_fake + loss_d_lbl 
 
-real_activations, fake_activations, _ = tf.split_v(d5, [num_unl, num_unl, num_lbl], 0) 
-loss_g = tf.reduce_mean(tf.square(tf.reduce_mean(real_activations,axis=0) 
-                                - tf.reduce_mean(fake_activations,axis=0))) 
+    real_activations, fake_activations, _ = tf.split_v(d5, [num_unl, num_unl, num_lbl], 0) 
+    loss_g = tf.reduce_mean(tf.square(tf.reduce_mean(real_activations,axis=0) 
+                                    - tf.reduce_mean(fake_activations,axis=0))) 
 
-accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits_lbl,axis=1),labels), tf.float32))
-prob_lbl = 1 - 1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1)
-avg_prob_lbl = tf.reduce_mean(prob_lbl)
-softmax_loss_lbl = tf.nn.softmax_cross_entropy_with_logits(logits=logits_lbl, 
-                                                            labels=tf.one_hot(labels,10))
-
-#FGSM 
-epsilon=FLAGS.epsilon
-pertubation = tf.sign(tf.gradients(softmax_loss_lbl, labelled_images))
-#image summary for real_images, pertubation 
-#apply pertubation to images
-perturbed_images = tf.squeeze(epsilon * pertubation) + labelled_images
+    accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits_lbl,axis=1),labels), tf.float32))
+    prob_lbl = 1 - 1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1)
+    avg_prob_lbl = tf.reduce_mean(prob_lbl)
+    softmax_loss_lbl = tf.nn.softmax_cross_entropy_with_logits(logits=logits_lbl, 
+                                                                labels=tf.one_hot(labels,10))
+with tf.name_scope('adv'):
+    #FGSM 
+    epsilon=FLAGS.epsilon
+    pertubation = tf.sign(tf.gradients(softmax_loss_lbl, labelled_images))
+    #image summary for real_images, pertubation 
+    #apply pertubation to images
+    perturbed_images = tf.squeeze(epsilon * pertubation) + labelled_images
 
 #create summary ops 
 #merged summary for training: loss_g, loss_d, gen_images
+
 loss_g_summary = tf.summary.scalar('loss_g', loss_g)
 loss_d_summary = tf.summary.scalar('loss_d', loss_d)
 loss_d_unl_summary = tf.summary.scalar('loss_d_unl', loss_d_unl)
@@ -169,13 +171,7 @@ test_summary = tf.summary.merge([accuracy_summary, prob_lbl_mean_summary, prob_l
 adv_summary = tf.summary.merge([accuracy_summary, prob_lbl_mean_summary, prob_lbl_summary,
                                 image_summary])
 
-if not os.path.exists(FLAGS.log_dir):
-    os.makedirs(FLAGS.log_dir)
-
-#train the network
-saver = tf.train.Saver()
-sess = tf.Session()
-with sess.as_default():
+with tf.name_scope('training'):
     d_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=0.5)
     g_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=0.5)
     gvs = d_optimizer.compute_gradients(loss_d, 
@@ -184,6 +180,14 @@ with sess.as_default():
     d_train_op = d_optimizer.apply_gradients(clipped_gradients)
     g_train_op = g_optimizer.minimize(loss_g,
                 var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope="generator"))
+
+if not os.path.exists(FLAGS.log_dir):
+    os.makedirs(FLAGS.log_dir)
+
+#train the network
+saver = tf.train.Saver()
+sess = tf.Session()
+with sess.as_default():
     train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train', sess.graph)
     test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test')
     adv_writer = tf.summary.FileWriter(FLAGS.log_dir + '/adv')
