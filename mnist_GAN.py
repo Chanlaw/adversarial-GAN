@@ -113,9 +113,9 @@ y_labelled = np.concatenate(y_labelled, axis=0)
 
 #loss functions
 #TODO: Implement label smoothing
-num_unl = tf.placeholder(tf.int64, shape=[])
-num_lbl = tf.placeholder(tf.int64, shape=[]) #num of labelled examples for supervised training
-labels = tf.placeholder(tf.int64, shape=[None])
+num_unl = tf.placeholder(tf.int64, shape=[], name='num_unl')
+num_lbl = tf.placeholder(tf.int64, shape=[], name='num_lbl') #num of labelled examples for supervised training
+labels = tf.placeholder(tf.int64, shape=[None], name='labels')
 
 with tf.name_scope('eval'):
     logits_unl, logits_fake, logits_lbl = tf.split_v(d_output, [num_unl, num_unl, num_lbl], 0)
@@ -149,6 +149,10 @@ with tf.name_scope('adv'):
 
 #create summary ops 
 #merged summary for training: loss_g, loss_d, gen_images
+with tf.name_scope('image_summaries'):
+    gen_images_uint = tf.reshape(tf.cast((gen_images+epsilon)*255.0/(1+2*epsilon), tf.uint8), [batch_size, 28, 28, 1])
+    images_uint = tf.reshape(tf.cast((labelled_images+epsilon)*255.0/(1+2*epsilon), tf.uint8), [batch_size, 28, 28, 1])
+    pertubation_uint = tf.reshape(tf.cast(pertubation*127.5+127.5, tf.uint8),[batch_size, 28, 28, 1])
 
 with tf.name_scope('loss'):
     loss_g_summary = tf.summary.scalar('generator', loss_g)
@@ -157,16 +161,15 @@ with tf.name_scope('loss'):
     loss_d_fake_summary = tf.summary.scalar('discriminator_fake', loss_d_fake)
     loss_d_lbl_summary = tf.summary.scalar('discriminator_lbl', loss_d_lbl)
 accuracy_summary = tf.summary.scalar('accuracy_d', accuracy)
-gen_images_summary = tf.summary.image('gen_images', tf.reshape(gen_images, [batch_size, 28, 28, 1]),
-                                        max_outputs=10)
+gen_images_summary = tf.summary.image('gen_images', gen_images_uint, max_outputs=10)
 train_summary = tf.summary.merge([loss_g_summary, loss_d_summary, loss_d_unl_summary, 
                                 loss_d_fake_summary, loss_d_lbl_summary, accuracy_summary, 
                                 gen_images_summary])
 #merged summary for evaluation and adversarial examples: accuracy, prob_lbl, images, pertubation, perturbed images
 prob_lbl_mean_summary = tf.summary.scalar('prob_lbl_mean', avg_prob_lbl)
 prob_lbl_summary = tf.summary.histogram('prob_lbl', prob_lbl)
-image_summary = tf.summary.image('images', tf.reshape(labelled_images, [batch_size, 28, 28, 1]), max_outputs=10)
-pertubation_summary = tf.summary.image('pertubation', tf.reshape(pertubation, [batch_size, 28, 28, 1]), max_outputs=10)
+image_summary = tf.summary.image('images', images_uint, max_outputs=10)
+pertubation_summary = tf.summary.image('pertubation', pertubation_uint, max_outputs=10)
 test_summary = tf.summary.merge([accuracy_summary, prob_lbl_mean_summary, prob_lbl_summary,
                                 image_summary, pertubation_summary])
 adv_summary = tf.summary.merge([accuracy_summary, prob_lbl_mean_summary, prob_lbl_summary,
