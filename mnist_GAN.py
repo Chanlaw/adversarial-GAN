@@ -70,7 +70,7 @@ labelled_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="labelled_
 with tf.variable_scope("discriminator"):
     with tf.variable_scope("hidden1") as scope:
         d1 = fully_connected(
-                gaussian_noise(tf.concat_v2([real_images, gen_images, labelled_images],0), sigma=0.3),
+                gaussian_noise(tf.concat([real_images, gen_images, labelled_images],0), sigma=0.3),
                 MNIST_SIZE, 1000, train_scale=False, scope=scope)
     with tf.variable_scope("hidden2") as scope:
         d2 = fully_connected(gaussian_noise(d1, sigma=0.5), 1000, 500, train_scale=False, scope=scope)
@@ -118,7 +118,7 @@ num_lbl = tf.placeholder(tf.int64, shape=[], name='num_lbl') #num of labelled ex
 labels = tf.placeholder(tf.int64, shape=[None], name='labels')
 
 with tf.name_scope('eval'):
-    logits_unl, logits_fake, logits_lbl = tf.split_v(d_output, [num_unl, num_unl, num_lbl], 0)
+    logits_unl, logits_fake, logits_lbl = tf.split(d_output, [num_unl, num_unl, num_lbl], 0)
     #TODO: Historical Averaging
     loss_d_unl = 0.5 * tf.reduce_mean(- tf.log(tf.reduce_sum(tf.exp(logits_unl), axis=1) + 1e-8) \
                 + tf.log(tf.reduce_sum(tf.exp(logits_unl),axis=1)+1))
@@ -130,7 +130,7 @@ with tf.name_scope('eval'):
                         lambda: tf.constant(0.))
     loss_d = loss_d_unl + loss_d_fake + loss_d_lbl 
 
-    real_activations, fake_activations, _ = tf.split_v(d5, [num_unl, num_unl, num_lbl], 0) 
+    real_activations, fake_activations, _ = tf.split(d5, [num_unl, num_unl, num_lbl], 0) 
     loss_g = tf.reduce_mean(tf.square(tf.reduce_mean(real_activations,axis=0) 
                                     - tf.reduce_mean(fake_activations,axis=0))) 
 

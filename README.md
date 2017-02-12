@@ -13,4 +13,8 @@ To use tensorboard to look at the images, run:
 tensorboard --logdir=checkpoints
 ```
 
-Developed using Tensorflow 0.12.1.
+Dependencies:
+```
+Python 2.7
+Tensorflow 1.0
+```

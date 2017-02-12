@@ -53,7 +53,7 @@ def fully_connected(x, input_len, num_units, activation=tf.nn.relu, train_scale=
 labels_fake = tf.placeholder(tf.int64, shape=[None], name='fake_labels')
 with tf.variable_scope("generator"):
     noise = tf.placeholder(tf.float32, [None, 100], name="noise")
-    gen_input = tf.concat_v2([tf.one_hot(labels_fake, 10), noise], 1)
+    gen_input = tf.concat([tf.one_hot(labels_fake, 10), noise], 1)
     with tf.variable_scope("hidden1") as scope:
         out1 = tf.contrib.layers.batch_norm(
             tf.contrib.layers.fully_connected(gen_input, 500, tf.nn.softplus, scope=scope),
@@ -70,7 +70,7 @@ real_images = tf.placeholder(tf.float32, [None, MNIST_SIZE], name="real_images")
 with tf.variable_scope("discriminator"):
     with tf.variable_scope("hidden1") as scope:
         d1 = fully_connected(
-                gaussian_noise(tf.concat_v2([gen_images, real_images],0), sigma=0.3),
+                gaussian_noise(tf.concat([gen_images, real_images],0), sigma=0.3),
                 MNIST_SIZE, 1000, train_scale=False, scope=scope)
     with tf.variable_scope("hidden2") as scope:
         d2 = fully_connected(gaussian_noise(d1, sigma=0.3), 1000, 500, train_scale=0, scope=scope)
@@ -101,7 +101,7 @@ num_unl = tf.placeholder(tf.int64, shape=[], name='num_unl')
 num_real = tf.placeholder(tf.int64, shape=[], name='num_real') #num of labelled examples for supervised training
 
 with tf.name_scope('eval'):
-    logits_fake, logits_real = tf.split_v(d_output, [num_unl, num_real], 0)
+    logits_fake, logits_real = tf.split(d_output, [num_unl, num_real], 0)
     l_class = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits_fake,
                                                             labels=tf.one_hot(labels_fake,10))) \
             + tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits_real, 
