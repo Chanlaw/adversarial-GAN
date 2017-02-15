@@ -136,6 +136,7 @@ with tf.name_scope('eval'):
 
     accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits_lbl,axis=1),labels), tf.float32))
     prob_lbl = 1 - 1/(tf.reduce_sum(tf.exp(logits_lbl),axis=1)+1)
+    over_half = tf.reduce_sum(tf.to_int32(tf.greater_equal(prob_lbl, 0.5)))
     avg_prob_lbl = tf.reduce_mean(prob_lbl)
     softmax_loss_lbl = tf.nn.softmax_cross_entropy_with_logits(logits=logits_lbl, 
                                                                 labels=tf.one_hot(labels,10))
@@ -247,6 +248,7 @@ with sess.as_default():
         test_accuracies=[]
         adv_probs=[]
         adv_accuracies=[]
+        detect_accuracies=[]
         print("- Evaluating on Test and Adverarial (epsilon=%.4f) Data:" %epsilon)
         eval_n = np.random.randint(int(x_test.shape[0]/batch_size))
         for i in xrange(int(x_test.shape[0]/batch_size)):
@@ -257,13 +259,13 @@ with sess.as_default():
                         num_lbl: batch_size,
                         labels: y_test[i*batch_size: (i+1)*batch_size]}
             if(i==eval_n):
-                perturbed, disc_prob, disc_acc, disc_loss, summary= \
-                        sess.run([perturbed_images, avg_prob_lbl, accuracy, loss_d_lbl, test_summary], 
+                perturbed, disc_prob, disc_acc, disc_loss, num_correct, summary= \
+                        sess.run([perturbed_images, avg_prob_lbl, accuracy, loss_d_lbl, over_half, test_summary], 
                         feed_dict=feed_dict)
                 test_writer.add_summary(summary, epoch*60000//batch_size)
             else:
-                perturbed, disc_prob, disc_acc, disc_loss = \
-                        sess.run([perturbed_images, avg_prob_lbl, accuracy, loss_d_lbl], 
+                perturbed, disc_prob, disc_acc, num_correct, disc_loss = \
+                        sess.run([perturbed_images, avg_prob_lbl, accuracy, over_half, loss_d_lbl], 
                         feed_dict=feed_dict)
             perturbed_feed = {noise: np.zeros([0,100]),
                         real_images: np.zeros([0,784]),
@@ -272,28 +274,34 @@ with sess.as_default():
                         num_lbl: batch_size,
                         labels: y_test[i*batch_size: (i+1)*batch_size]}
             if(i == eval_n):
-                perturbed_prob, perturbed_acc, perturbed_loss, summary= \
-                        sess.run([avg_prob_lbl, accuracy, loss_d_lbl, adv_summary], 
+                perturbed_prob, perturbed_acc, perturbed_loss, num_incorrect, summary= \
+                        sess.run([avg_prob_lbl, accuracy, loss_d_lbl, over_half, adv_summary], 
                                 feed_dict=perturbed_feed)
                 adv_writer.add_summary(summary, epoch*60000//batch_size)
             else:
-                perturbed_prob, perturbed_acc, perturbed_loss = \
-                        sess.run([avg_prob_lbl, accuracy, loss_d_lbl], feed_dict=perturbed_feed)
+                perturbed_prob, perturbed_acc, perturbed_loss, num_incorrect = \
+                        sess.run([avg_prob_lbl, accuracy, loss_d_lbl, over_half], feed_dict=perturbed_feed)
             test_probs.append(disc_prob)
             test_accuracies.append(disc_acc)
             adv_probs.append(perturbed_prob)
             adv_accuracies.append(perturbed_acc)
+            detect_accuracies.append(1.0*num_correct/batch_size)
+            detect_accuracies.append(1.0 - 1.0*num_incorrect/batch_size)
 
         test_probs=np.array(test_probs)
         test_accuracies=np.array(test_accuracies)
         adv_probs=np.array(adv_probs)
         adv_accuracies=np.array(adv_accuracies)
+        detect_accuracies = np.array(detect_accuracies)
         print("Original Accuracy: %.4f+/-%.4f Adversarial Accuracy: %.4f+/-%.4f" \
             %(np.mean(test_accuracies), np.std(test_accuracies), 
                 np.mean(adv_accuracies), np.std(adv_accuracies)))
         print("Original Probability: %.4f+/-%.4f Adversarial Probability: %.4f+/-%.4f" \
             %(np.mean(test_probs), np.std(test_probs), 
                 np.mean(adv_probs), np.std(adv_probs)))
+        print("Adversarial Classification Accuracy  %.4f+/-%.4f" \
+            %(np.mean(detect_accuracies), np.std(detect_accuracies)))
+
     
         #Make a checkpoint
         saver.save(sess, FLAGS.log_dir + '/checkpoint', global_step=(epoch+1))
