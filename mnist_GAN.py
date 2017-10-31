@@ -104,7 +104,7 @@ x_train = x_train[idx]
 y_train = y_train[idx]
 x_labelled = []
 y_labelled = []
-for i in xrange(10):
+for i in range(10):
     x_labelled.append(x_train[y_train==i][:FLAGS.examples_per_class])
     y_labelled.append(y_train[y_train==i][:FLAGS.examples_per_class])
 x_labelled = np.concatenate(x_labelled, axis=0)
@@ -203,12 +203,12 @@ with sess.as_default():
         print("Loading from checkpoint: %s" %tf.train.latest_checkpoint(FLAGS.log_dir))
         saver.restore(sess, tf.train.latest_checkpoint(FLAGS.log_dir))
 
-    for epoch in xrange(FLAGS.num_epochs):
+    for epoch in range(FLAGS.num_epochs):
         x_unl = x_unl[np.random.permutation(x_unl.shape[0])]
         x_unl2 = x_unl2[np.random.permutation(x_unl2.shape[0])]
         x_lbl = []
         y_lbl = []
-        for i in xrange(int(math.ceil(x_unl.shape[0]/x_labelled.shape[0]))):
+        for i in range(int(math.ceil(x_unl.shape[0]/x_labelled.shape[0]))):
             idx = np.random.permutation(x_labelled.shape[0]) 
             x_lbl.append(x_labelled[idx])
             y_lbl.append(y_labelled[idx])
@@ -217,7 +217,7 @@ with sess.as_default():
         print("-------")
         print("Epoch %d:" %(epoch + 1))
         print("-------")
-        for i in xrange(int(x_train.shape[0]/batch_size)):
+        for i in range(int(x_train.shape[0]/batch_size)):
             feed_dict_d = {noise: np.random.randn(batch_size, 100), 
                         real_images: x_unl[i*batch_size: (i+1)*batch_size], 
                         labelled_images: x_lbl[i*batch_size: (i+1)*batch_size],
@@ -251,7 +251,7 @@ with sess.as_default():
         detect_accuracies=[]
         print("- Evaluating on Test and Adverarial (epsilon=%.4f) Data:" %epsilon)
         eval_n = np.random.randint(int(x_test.shape[0]/batch_size))
-        for i in xrange(int(x_test.shape[0]/batch_size)):
+        for i in range(int(x_test.shape[0]/batch_size)):
             feed_dict = {noise: np.zeros([0,100]),
                         real_images: np.zeros([0,784]),
                         labelled_images: x_test[i*batch_size: (i+1)*batch_size],

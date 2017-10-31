@@ -182,14 +182,14 @@ with sess.as_default():
         print("Loading from checkpoint: %s" %tf.train.latest_checkpoint(FLAGS.log_dir))
         saver.restore(sess, tf.train.latest_checkpoint(FLAGS.log_dir))
 
-    for epoch in xrange(FLAGS.num_epochs):
+    for epoch in range(FLAGS.num_epochs):
         idx = np.random.permutation(x_train.shape[0]) 
         x_train = x_train[idx]
         y_train = y_train[idx]
         print("-------")
         print("Epoch %d:" %(epoch + 1))
         print("-------")
-        for i in xrange(int(x_train.shape[0]/batch_size)):
+        for i in range(int(x_train.shape[0]/batch_size)):
             feed_dict = {noise: np.random.randn(batch_size, 100), 
                         real_images: x_train[i*batch_size: (i+1)*batch_size], 
                         num_unl: batch_size,
@@ -213,7 +213,7 @@ with sess.as_default():
         adv_accuracies=[]
         print("- Evaluating on Test and Adverarial (epsilon=%.4f) Data:" %epsilon)
         eval_n = np.random.randint(int(x_test.shape[0]/batch_size))
-        for i in xrange(int(x_test.shape[0]/batch_size)):
+        for i in range(int(x_test.shape[0]/batch_size)):
             feed_dict = {noise: np.zeros([0,100]),
                         real_images: x_test[i*batch_size: (i+1)*batch_size],
                         num_unl: 0,
