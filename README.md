@@ -15,6 +15,6 @@ tensorboard --logdir=checkpoints
 
 Dependencies:
 ```
-Python 2.7
-Tensorflow 1.0
+Python 3.6
+Tensorflow 1.3.0
 ```
