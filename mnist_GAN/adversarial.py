@@ -5,6 +5,7 @@ def fgsm_attack(labelled_images, softmax_loss_lbl, epsilon):
     Args:
         labelled_images: images being perturbed
         softmax_loss_lbl: softmax loss on labelled output percentage from discriminator
+        epsilon: the constant used to multiply with the perturbation in fgsm
     """
     with tf.name_scope('adv'):
         pertubation = tf.sign(tf.gradients(softmax_loss_lbl, labelled_images))

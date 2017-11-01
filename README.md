@@ -6,6 +6,7 @@ Using the default hyperparameters and training with 100 labelled examples per cl
 
 Replicate by running:
 ```
+cd mnist_GAN
 python mnist_GAN.py
 ```
 To use tensorboard to look at the images, run:

@@ -9,7 +9,7 @@ def fully_connected(x, input_len, num_units, activation=tf.nn.relu, train_scale=
         input_len: number of dimensions for x
         num_units: number of units for this layer
         activation: tf activation function used for this layer
-        train_scale: g is added into the tf graph selection
+        train_scale: boolean indicates if variable g is set to trainable
         scope: variable_scope name, default name being fully_connected
     Returns:
         output for the layer

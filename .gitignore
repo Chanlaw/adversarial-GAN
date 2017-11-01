@@ -1,0 +1,5 @@
+mnist_GAN/__pycache__/
+mnist_GAN/checkpoints/
+checkpoints/
+checkpoints_ac/
+
